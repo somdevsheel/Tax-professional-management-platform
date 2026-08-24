@@ -1,0 +1,19 @@
+{
+  "name": "tax-practice-platform",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Multi-tenant SaaS platform for Indian tax professionals and CA firms",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@9.15.9",
+  "scripts": {
+    "dev:api": "pnpm --filter @tax-platform/api dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "docker:up": "docker compose -f infrastructure/docker-compose.yml up -d",
+    "docker:down": "docker compose -f infrastructure/docker-compose.yml down"
+  }
+}

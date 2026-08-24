@@ -1,0 +1,624 @@
+// Prisma schema — executable source of truth alongside docs/database-design.md.
+// Phase 1 implements code against User/Organization/OrganizationMember/Role/Permission/
+// Session/RefreshToken/AuditLog. The remaining models are defined now so later phases build
+// on a stable schema, but their application code lands in Phase 2+ per docs/development-roadmap.md.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgcrypto, pg_trgm, citext]
+}
+
+// ---------------------------------------------------------------------------
+// Identity & Tenancy
+// ---------------------------------------------------------------------------
+
+model User {
+  id                  String   @id @default(uuid())
+  email               String   @unique @db.Citext
+  passwordHash        String   @map("password_hash")
+  fullName            String   @map("full_name")
+  phone               String?
+  status               UserStatus @default(PENDING_VERIFICATION)
+  emailVerifiedAt      DateTime? @map("email_verified_at")
+  mfaEnabled           Boolean   @default(false) @map("mfa_enabled")
+  mfaSecretEncrypted   String?   @map("mfa_secret_encrypted")
+  lastLoginAt          DateTime? @map("last_login_at")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  memberships          OrganizationMember[]
+  sessions             Session[]
+  createdClients       Client[]              @relation("ClientCreatedBy")
+  createdCredentials   Credential[]          @relation("CredentialCreatedBy")
+  auditLogs            AuditLog[]
+
+  @@map("users")
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  PENDING_VERIFICATION
+}
+
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  status    OrganizationStatus @default(TRIAL)
+  plan      String   @default("trial")
+  settings  Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  members           OrganizationMember[]
+  roles             Role[]
+  clients           Client[]
+  auditLogs         AuditLog[]
+  settingsEntries   Setting[]
+
+  @@map("organizations")
+}
+
+enum OrganizationStatus {
+  ACTIVE
+  SUSPENDED
+  TRIAL
+}
+
+model OrganizationMember {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  userId         String   @map("user_id")
+  roleId         String   @map("role_id")
+  status         MemberStatus @default(INVITED)
+  invitedBy      String?  @map("invited_by")
+  joinedAt       DateTime? @map("joined_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           Role         @relation(fields: [roleId], references: [id])
+
+  clientAssignments ClientAssignment[]
+
+  @@unique([organizationId, userId])
+  @@index([organizationId])
+  @@map("organization_members")
+}
+
+enum MemberStatus {
+  ACTIVE
+  INVITED
+  DISABLED
+}
+
+// ---------------------------------------------------------------------------
+// RBAC
+// ---------------------------------------------------------------------------
+
+model Role {
+  id             String   @id @default(uuid())
+  organizationId String?  @map("organization_id")
+  name           String
+  isSystem       Boolean  @default(false) @map("is_system")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members        OrganizationMember[]
+  permissions    RolePermission[]
+
+  @@unique([organizationId, name])
+  @@map("roles")
+}
+
+model Permission {
+  id          String @id @default(uuid())
+  code        String @unique
+  description String?
+  category    String
+
+  roles       RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String @map("role_id")
+  permissionId String @map("permission_id")
+
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// ---------------------------------------------------------------------------
+// Clients
+// ---------------------------------------------------------------------------
+
+model Client {
+  id              String    @id @default(uuid())
+  organizationId  String    @map("organization_id")
+  name            String
+  entityType      EntityType @map("entity_type")
+  pan             String?
+  gstin           String?
+  tan             String?
+  cin             String?
+  address         Json?
+  email           String?   @db.Citext
+  phone           String?
+  contactPerson   String?   @map("contact_person")
+  financialYear   String?   @map("financial_year")
+  assessmentYear  String?   @map("assessment_year")
+  status          ClientStatus @default(ONBOARDING)
+  notes           String?
+  tags            String[]  @default([])
+  createdById     String    @map("created_by")
+  deletedAt       DateTime? @map("deleted_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy       User         @relation("ClientCreatedBy", fields: [createdById], references: [id])
+  contacts        ClientContact[]
+  assignments     ClientAssignment[]
+  portalAccounts  PortalAccount[]
+  documents       Document[]
+  tasks           Task[]
+  complianceItems ComplianceItem[]
+
+  @@index([organizationId, pan])
+  @@index([organizationId, gstin])
+  @@index([organizationId, tan])
+  @@index([organizationId, cin])
+  @@index([organizationId, name])
+  @@map("clients")
+}
+
+enum EntityType {
+  INDIVIDUAL
+  PROPRIETORSHIP
+  PARTNERSHIP
+  LLP
+  PRIVATE_LIMITED
+  PUBLIC_LIMITED
+  TRUST
+  SOCIETY
+  HUF
+  OTHER
+}
+
+enum ClientStatus {
+  ACTIVE
+  INACTIVE
+  ONBOARDING
+  OFFBOARDED
+}
+
+model ClientContact {
+  id        String  @id @default(uuid())
+  clientId  String  @map("client_id")
+  name      String
+  role      String?
+  email     String?
+  phone     String?
+  isPrimary Boolean @default(false) @map("is_primary")
+
+  client    Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@map("client_contacts")
+}
+
+model ClientAssignment {
+  id                   String    @id @default(uuid())
+  clientId             String    @map("client_id")
+  organizationMemberId String    @map("organization_member_id")
+  assignedRole         String?   @map("assigned_role")
+  assignedAt           DateTime  @default(now()) @map("assigned_at")
+  unassignedAt         DateTime? @map("unassigned_at")
+
+  client               Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  member               OrganizationMember @relation(fields: [organizationMemberId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([organizationMemberId])
+  @@map("client_assignments")
+}
+
+// ---------------------------------------------------------------------------
+// Portals & Credential Vault
+// ---------------------------------------------------------------------------
+
+model Portal {
+  id                 String  @id @default(uuid())
+  code               String  @unique
+  name               String
+  category           String
+  baseUrl            String  @map("base_url")
+  loginUrl           String  @map("login_url")
+  isActive           Boolean @default(true) @map("is_active")
+  automationAdapterKey String? @map("automation_adapter_key")
+  configSchema       Json    @default("{}") @map("config_schema")
+
+  portalAccounts     PortalAccount[]
+
+  @@map("portals")
+}
+
+model PortalAccount {
+  id               String   @id @default(uuid())
+  organizationId   String   @map("organization_id")
+  clientId         String   @map("client_id")
+  portalId         String   @map("portal_id")
+  identifier       String
+  displayUsername  String?  @map("display_username")
+  status           PortalAccountStatus @default(ACTIVE)
+  lastVerifiedAt   DateTime? @map("last_verified_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  client           Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  portal           Portal       @relation(fields: [portalId], references: [id])
+  credentials      Credential[]
+
+  @@index([organizationId, clientId])
+  @@map("portal_accounts")
+}
+
+enum PortalAccountStatus {
+  ACTIVE
+  NEEDS_UPDATE
+  DISABLED
+}
+
+model Credential {
+  id               String   @id @default(uuid())
+  organizationId   String   @map("organization_id")
+  portalAccountId  String   @map("portal_account_id")
+  // Single AES-256-GCM ciphertext of the JSON payload {username, password} — one payload, one
+  // DEK, one nonce, satisfying GCM's "never reuse a nonce under the same key" requirement
+  // without needing two independently-nonced fields. See docs/security-design.md §5.
+  payloadCiphertext Bytes   @map("payload_ciphertext")
+  encryptionNonce   Bytes    @map("encryption_nonce")
+  // Per-credential DEK, wrapped directly by the environment KEK (see docs/security-design.md §5
+  // for why this is per-credential rather than per-organization: smaller blast radius per key,
+  // no separate key-registry table to keep consistent).
+  wrappedDataKey     Bytes    @map("wrapped_data_key")
+  keyVersion         Int      @map("key_version")
+  algorithm          String   @default("AES-256-GCM")
+  status             CredentialStatus @default(ACTIVE)
+  lastUsedAt         DateTime? @map("last_used_at")
+  lastRotatedAt      DateTime? @map("last_rotated_at")
+  createdById        String   @map("created_by")
+  deletedAt          DateTime? @map("deleted_at")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  portalAccount      PortalAccount @relation(fields: [portalAccountId], references: [id], onDelete: Cascade)
+  createdBy          User          @relation("CredentialCreatedBy", fields: [createdById], references: [id])
+  accessLogs         CredentialAccessLog[]
+  portalSessions     PortalSession[]
+
+  @@index([organizationId])
+  @@map("credentials")
+}
+
+enum CredentialStatus {
+  ACTIVE
+  NEEDS_ROTATION
+  REVOKED
+}
+
+model CredentialAccessLog {
+  id              String   @id @default(uuid())
+  credentialId    String   @map("credential_id")
+  organizationId  String   @map("organization_id")
+  userId          String   @map("user_id")
+  action          String
+  ipAddress       String?  @map("ip_address")
+  userAgent       String?  @map("user_agent")
+  portalSessionId String?  @map("portal_session_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  credential      Credential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+
+  @@index([credentialId])
+  @@index([organizationId, createdAt])
+  @@map("credential_access_logs")
+}
+
+// One "open this portal" workflow instance (docs/browser-automation-design.md §5 state
+// machine). Backend issues a single-use, short-TTL token for the desktop app to fetch the
+// decrypted credential exactly once; the desktop app reports lifecycle events back here for
+// the audit trail. No plaintext is ever stored on this row.
+model PortalSession {
+  id                String   @id @default(uuid())
+  organizationId    String   @map("organization_id")
+  clientId          String   @map("client_id")
+  credentialId      String   @map("credential_id")
+  initiatedById     String   @map("initiated_by")
+  status            PortalSessionStatus @default(PENDING)
+  oneTimeTokenHash  String   @unique @map("one_time_token_hash")
+  oneTimeTokenUsedAt DateTime? @map("one_time_token_used_at")
+  expiresAt         DateTime @map("expires_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  credential        Credential @relation(fields: [credentialId], references: [id])
+  events            PortalSessionEvent[]
+
+  @@index([organizationId, clientId])
+  @@map("portal_sessions")
+}
+
+enum PortalSessionStatus {
+  PENDING
+  CREDENTIAL_ISSUED
+  AWAITING_USER_CHALLENGE
+  COMPLETED
+  FAILED
+  EXPIRED
+}
+
+model PortalSessionEvent {
+  id              String   @id @default(uuid())
+  portalSessionId String   @map("portal_session_id")
+  type            String
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  session         PortalSession @relation(fields: [portalSessionId], references: [id], onDelete: Cascade)
+
+  @@map("portal_session_events")
+}
+
+// ---------------------------------------------------------------------------
+// Documents
+// ---------------------------------------------------------------------------
+
+model DocumentCategory {
+  id             String  @id @default(uuid())
+  organizationId String? @map("organization_id")
+  name           String
+  parentId       String? @map("parent_id")
+
+  documents      Document[]
+
+  @@map("document_categories")
+}
+
+model Document {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  clientId       String?  @map("client_id")
+  categoryId     String?  @map("category_id")
+  fileName       String   @map("file_name")
+  storageKey     String   @map("storage_key")
+  mimeType       String   @map("mime_type")
+  sizeBytes      Int      @map("size_bytes")
+  checksumSha256 String   @map("checksum_sha256")
+  tags           String[] @default([])
+  uploadedById   String   @map("uploaded_by")
+  accessLevel    DocumentAccessLevel @default(ORGANIZATION) @map("access_level")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  deletedAt      DateTime? @map("deleted_at")
+
+  client         Client?           @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  category       DocumentCategory? @relation(fields: [categoryId], references: [id])
+
+  @@index([organizationId, clientId])
+  @@map("documents")
+}
+
+enum DocumentAccessLevel {
+  ORGANIZATION
+  ASSIGNED_EMPLOYEES
+  SPECIFIC_USERS
+}
+
+// ---------------------------------------------------------------------------
+// Tasks
+// ---------------------------------------------------------------------------
+
+model Task {
+  id               String   @id @default(uuid())
+  organizationId   String   @map("organization_id")
+  clientId         String?  @map("client_id")
+  portalAccountId  String?  @map("portal_account_id")
+  title            String
+  description      String?
+  status           TaskStatus @default(TODO)
+  priority         TaskPriority @default(MEDIUM)
+  dueDate          DateTime? @map("due_date")
+  assignedTo       String?  @map("assigned_to")
+  createdById      String   @map("created_by")
+  recurrenceRule   Json?    @map("recurrence_rule")
+  parentTaskId     String?  @map("parent_task_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  deletedAt        DateTime? @map("deleted_at")
+
+  client           Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  comments         TaskComment[]
+
+  @@index([organizationId, assignedTo, status, dueDate])
+  @@map("tasks")
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  WAITING
+  COMPLETED
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model TaskComment {
+  id        String   @id @default(uuid())
+  taskId    String   @map("task_id")
+  authorId  String   @map("author_id")
+  body      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  task      Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@map("task_comments")
+}
+
+// ---------------------------------------------------------------------------
+// Compliance
+// ---------------------------------------------------------------------------
+
+model ComplianceType {
+  id               String  @id @default(uuid())
+  organizationId   String? @map("organization_id")
+  code             String
+  name             String
+  category         String
+  periodicity      String
+  defaultDueRule   Json?   @map("default_due_rule")
+
+  items            ComplianceItem[]
+
+  @@unique([organizationId, code])
+  @@map("compliance_types")
+}
+
+model ComplianceItem {
+  id               String   @id @default(uuid())
+  organizationId   String   @map("organization_id")
+  clientId         String   @map("client_id")
+  complianceTypeId String   @map("compliance_type_id")
+  financialYear    String   @map("financial_year")
+  assessmentYear   String?  @map("assessment_year")
+  dueDate          DateTime @map("due_date")
+  filingDate       DateTime? @map("filing_date")
+  status           ComplianceStatus @default(UPCOMING)
+  assignedTo       String?  @map("assigned_to")
+  notes            String?
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  client           Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  complianceType   ComplianceType @relation(fields: [complianceTypeId], references: [id])
+
+  @@index([organizationId, status, dueDate])
+  @@map("compliance_items")
+}
+
+enum ComplianceStatus {
+  UPCOMING
+  IN_PROGRESS
+  FILED
+  VERIFIED
+  OVERDUE
+  NOT_APPLICABLE
+}
+
+// ---------------------------------------------------------------------------
+// Notifications, Audit, Sessions, Settings
+// ---------------------------------------------------------------------------
+
+model Notification {
+  id                String   @id @default(uuid())
+  organizationId    String   @map("organization_id")
+  userId            String   @map("user_id")
+  type              String
+  title             String
+  body              String
+  relatedEntityType String?  @map("related_entity_type")
+  relatedEntityId   String?  @map("related_entity_id")
+  channel           String
+  readAt            DateTime? @map("read_at")
+  sentAt            DateTime? @map("sent_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@index([organizationId, userId, readAt])
+  @@map("notifications")
+}
+
+model AuditLog {
+  id             String   @id @default(uuid())
+  organizationId String?  @map("organization_id")
+  actorUserId    String?  @map("actor_user_id")
+  action         String
+  resourceType   String   @map("resource_type")
+  resourceId     String?  @map("resource_id")
+  result         String
+  ipAddress      String?  @map("ip_address")
+  userAgent      String?  @map("user_agent")
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  actor          User?         @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([resourceType, resourceId])
+  @@map("audit_logs")
+}
+
+model Session {
+  id             String    @id @default(uuid())
+  userId         String    @map("user_id")
+  organizationId String?   @map("organization_id")
+  deviceInfo     Json?     @map("device_info")
+  ipAddress      String?   @map("ip_address")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  lastSeenAt     DateTime  @default(now()) @map("last_seen_at")
+  expiresAt      DateTime  @map("expires_at")
+  revokedAt      DateTime? @map("revoked_at")
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokens  RefreshToken[]
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model RefreshToken {
+  id          String    @id @default(uuid())
+  sessionId   String    @map("session_id")
+  tokenHash   String    @unique @map("token_hash")
+  familyId    String    @map("family_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  expiresAt   DateTime  @map("expires_at")
+  revokedAt   DateTime? @map("revoked_at")
+  replacedById String?  @map("replaced_by_id")
+
+  session     Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([familyId])
+  @@map("refresh_tokens")
+}
+
+model Setting {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  key            String
+  value          Json
+  updatedBy      String   @map("updated_by")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, key])
+  @@map("settings")
+}
