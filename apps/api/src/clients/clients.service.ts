@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
+import type { ClientStatus, EntityType } from "@tax-platform/types";
 import { PrismaService } from "../infra/prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { AppError } from "../common/errors/app-error";
@@ -10,8 +11,8 @@ import type { CreateContactDto } from "./dto/create-contact.dto";
 import type { AssignClientDto } from "./dto/assign-client.dto";
 
 export interface ClientListFilters {
-  status?: string;
-  entityType?: string;
+  status?: ClientStatus;
+  entityType?: EntityType;
   assignedTo?: string;
   search?: string;
   cursor?: string;
@@ -33,11 +34,11 @@ export class ClientsService {
   async list(organizationId: string, filters: ClientListFilters) {
     const limit = Math.min(filters.limit ?? 50, 200);
 
-    const where = {
+    const where: Prisma.ClientWhereInput = {
       organizationId,
       deletedAt: null,
-      ...(filters.status ? { status: filters.status as never } : {}),
-      ...(filters.entityType ? { entityType: filters.entityType as never } : {}),
+      ...(filters.status ? { status: filters.status } : {}),
+      ...(filters.entityType ? { entityType: filters.entityType } : {}),
       ...(filters.assignedTo
         ? { assignments: { some: { organizationMemberId: filters.assignedTo, unassignedAt: null } } }
         : {}),
@@ -54,16 +55,29 @@ export class ClientsService {
         : {}),
     };
 
-    const clients = await this.prisma.client.findMany({
-      where,
-      orderBy: { name: "asc" },
-      take: limit + 1,
-      ...(filters.cursor ? { cursor: { id: filters.cursor }, skip: 1 } : {}),
-    });
+    // A cursor is resolved by Prisma independent of `where` — a cursor id from another
+    // tenant wouldn't leak that client's data (the `where` still applies to the page itself),
+    // but "the query behaves differently" is a weak cross-tenant existence oracle for an id an
+    // attacker would already need to know. Verifying it belongs to this org first closes that
+    // (docs/security-review.md); an unrecognized cursor is treated as "start from the top"
+    // rather than an error, so it fails safe either way.
+    const cursor = filters.cursor
+      ? await this.prisma.client.findFirst({ where: { id: filters.cursor, organizationId }, select: { id: true } })
+      : null;
+
+    const [clients, total] = await Promise.all([
+      this.prisma.client.findMany({
+        where,
+        orderBy: { name: "asc" },
+        take: limit + 1,
+        ...(cursor ? { cursor: { id: cursor.id }, skip: 1 } : {}),
+      }),
+      this.prisma.client.count({ where }),
+    ]);
 
     const hasMore = clients.length > limit;
     const page = hasMore ? clients.slice(0, limit) : clients;
-    return { data: page, nextCursor: hasMore ? page[page.length - 1].id : null, hasMore };
+    return { data: page, nextCursor: hasMore ? page[page.length - 1].id : null, hasMore, total };
   }
 
   async get(organizationId: string, clientId: string) {

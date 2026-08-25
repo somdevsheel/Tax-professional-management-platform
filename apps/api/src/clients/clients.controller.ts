@@ -4,6 +4,7 @@ import { CreateClientDto } from "./dto/create-client.dto";
 import { UpdateClientDto } from "./dto/update-client.dto";
 import { CreateContactDto } from "./dto/create-contact.dto";
 import { AssignClientDto } from "./dto/assign-client.dto";
+import { ListClientsQuery } from "./dto/list-clients.query";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { RequirePermission } from "../common/decorators/require-permission.decorator";
 import type { AuthContext } from "../common/types/auth-context";
@@ -14,27 +15,12 @@ export class ClientsController {
 
   @Get()
   @RequirePermission("clients.view")
-  async list(
-    @CurrentUser() auth: AuthContext,
-    @Query("status") status?: string,
-    @Query("entityType") entityType?: string,
-    @Query("assignedTo") assignedTo?: string,
-    @Query("search") search?: string,
-    @Query("cursor") cursor?: string,
-    @Query("limit") limitRaw?: string,
-  ) {
-    const result = await this.clients.list(auth.organizationId!, {
-      status,
-      entityType,
-      assignedTo,
-      search,
-      cursor,
-      limit: limitRaw ? Number(limitRaw) : undefined,
-    });
+  async list(@CurrentUser() auth: AuthContext, @Query() query: ListClientsQuery) {
+    const result = await this.clients.list(auth.organizationId!, query);
     return {
       success: true,
       data: result.data,
-      meta: { nextCursor: result.nextCursor, hasMore: result.hasMore },
+      meta: { nextCursor: result.nextCursor, hasMore: result.hasMore, total: result.total },
     };
   }
 

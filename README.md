@@ -14,12 +14,14 @@ against, not an afterthought.
 ```
 /apps
   /api        NestJS backend (modular monolith) — implemented (Phases 1–2)
-  /web        Next.js web application — not yet implemented (Phase 3)
-  /desktop    Tauri + React Windows desktop app — not yet implemented (Phase 4)
+  /web        Next.js web application — implemented (Phase 3, scoped to Phase 1–2 backend)
+  /desktop    Tauri + React Windows desktop app — implemented (Phase 4), compile-verified only —
+              see apps/desktop/README.md
 /packages
   /types      Shared TypeScript types/enums (RBAC, DTOs) — source of truth for API contracts
+  /api-client Typed API client (token lifecycle, silent refresh) shared by web and, later, desktop
   /config     Shared tsconfig
-  /ui, /api-client, /validation, /security  — reserved for later phases
+  /ui, /validation, /security  — reserved for later phases
 /docs         System design, architecture, security, API, desktop, browser-automation, threat
               model, deployment, roadmap
 /infrastructure  docker-compose.yml (Postgres, Redis, MinIO)
@@ -27,7 +29,7 @@ against, not an afterthought.
 
 See [docs/development-roadmap.md](docs/development-roadmap.md) for what's implemented vs. planned.
 
-## Current Status (Phases 1–2 done)
+## Current Status (Phases 1–5 built)
 
 **Phase 1 — Foundation:** authentication (Argon2id, RS256 JWT access tokens, rotating refresh
 tokens with reuse detection), multi-tenancy (organization-scoped JWT + guard pipeline), RBAC
@@ -44,10 +46,39 @@ integration against a real Postgres), covering tenant isolation, RBAC denial, re
 reuse detection, encryption round-trip/tamper detection, credential audit coverage, and
 single-use portal-session tokens.
 
-Not yet built: the web app, the desktop app (so no actual browser automation yet — the backend
-contract for it is in place), documents/tasks/compliance application code, and Postgres RLS as
-defense-in-depth (tracked in docs/development-roadmap.md, deferred to Phase 6 alongside a
-dedicated least-privilege DB role). See [docs/development-roadmap.md](docs/development-roadmap.md).
+**Phase 3 — Web app:** Next.js dashboard covering everything above — auth, client list/detail,
+portal accounts, full credential lifecycle (create/rotate/delete/reveal with a step-up
+password modal), employees, and a filterable audit-log viewer. Tasks/Compliance/Documents/
+Reports show as labeled "coming soon" placeholders in the nav rather than being built against
+backend endpoints that don't exist yet. `pnpm typecheck`/`lint`/`build` all clean; the full
+flow was verified end-to-end against a running API. Not yet covered: automated browser tests
+for the web app itself (no headless-browser tooling in this environment) — tracked for Phase 6.
+
+**Phase 4 — Desktop app:** Tauri (Rust + React) client — secure desktop auth via OS-native
+credential storage (the `keyring` crate: Windows Credential Manager/DPAPI, Secret
+Service/libsecret on Linux, Keychain on macOS), client list/detail, and the portal launcher
+wired end to end against the portal-session API: open the portal window → redeem the one-time
+credential token *in Rust only* → fill username/password → hand control to the human for
+CAPTCHA/OTP → report completion. `cargo check`/`build`/`clippy` all pass cleanly against real
+WebKitGTK headers, and the frontend typechecks/builds. **Honest gap:** this sandbox has no
+`sudo` and no Windows, so while the app compiles cleanly and launches, full interactive
+rendering and real portal autofill were never visually verified here — see
+[apps/desktop/README.md](apps/desktop/README.md) for exactly why and what a real Windows (or
+root-accessible Linux) build needs to confirm before this is trusted.
+
+**Phase 5 — Additional portals:** all seven seeded portals (GST, Income Tax, TRACES, MCA,
+EPFO, ESIC, DGFT) now have a registry entry in the desktop adapter engine, all but GST as
+plain config (no code) — the "adding a portal is a data change" design actually holds up.
+Selectors are still unverified: a live-fetch pass against each reachable login page found
+TRACES and the Income Tax portal are client-rendered SPAs with no static login form, and
+MCA's login page 403s a non-browser fetch — confirmed by trying, not assumed. New Rust unit
+tests (`cargo test`) cover the fill-script builder, including that a portal password shaped
+like a script-injection attempt stays safely escaped. Manual QA on a real Windows machine
+against each live portal remains the actual gate, same honesty as Phase 4.
+
+Not yet built: documents/tasks/compliance application code, and Postgres RLS as
+defense-in-depth (tracked in docs/development-roadmap.md, deferred to Phase 6 alongside
+a dedicated least-privilege DB role). See [docs/development-roadmap.md](docs/development-roadmap.md).
 
 ## Local Development
 
@@ -75,6 +106,21 @@ pnpm dev                 # starts the API on :4000 (PORT in .env to change)
 
 Verify: `curl http://localhost:4000/health` and `curl http://localhost:4000/health/ready`.
 
+**Web app** (in a second terminal, with the API above still running):
+
+```bash
+cd apps/api && pnpm prisma:generate   # generates the Prisma client apps/web's build doesn't need directly, but api-client's types do
+pnpm --filter @tax-platform/types build
+pnpm --filter @tax-platform/api-client build
+
+cd apps/web
+cp .env.example .env.local   # NEXT_PUBLIC_API_URL defaults to http://localhost:4000
+pnpm dev                      # starts the web app on :3000
+```
+
+**Desktop app** — see [apps/desktop/README.md](apps/desktop/README.md) (Windows prerequisites,
+and the Linux-specific WebKitGTK version note if you're developing on Linux).
+
 ### Checks
 
 ```bash
@@ -83,6 +129,15 @@ pnpm typecheck
 pnpm lint
 pnpm test        # unit + integration tests against the Postgres/Redis started above
 pnpm build
+
+cd ../web
+pnpm typecheck
+pnpm lint
+pnpm build
+
+cd ../desktop
+pnpm typecheck
+cd src-tauri && cargo check && cargo clippy && cargo test
 ```
 
 ## Security

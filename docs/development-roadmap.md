@@ -38,23 +38,70 @@ table-owning role), which is a deployment-configuration concern better done alon
 hardening than half-implemented now. Document upload/task/compliance application code remains
 Phase 3 as originally planned.
 
-## Phase 3 — Web Application
-- Next.js app: auth flow, dashboard, client list/detail, credential management UI (view
-  metadata/rotate, no default plaintext exposure), task management, document upload/browse.
-- `packages/api-client` typed hooks (TanStack Query) shared with desktop.
-- Exit criteria: full CRUD flows usable end-to-end against the Phase 1–2 backend.
+## Phase 3 — Web Application — done (scoped to what Phase 1–2 backend supports)
+- `packages/api-client`: typed `ApiClient` (auth token lifecycle, silent-refresh-and-retry,
+  every Phase 1–2 endpoint) — written to be shared with the desktop app later, not web-only.
+- Next.js (App Router) app: auth flow (login/register, in-memory access token, silent refresh
+  off the httpOnly cookie on load), dashboard shell (sidebar/topbar, org switcher for
+  multi-firm users), client list/detail/create with search+filter, portal catalog, and the
+  full credential management UI on a client's page — add/rotate/delete, plus **reveal** behind
+  a step-up password modal that auto-hides plaintext after 30s and is never cached by
+  React Query. Employees (list/invite/role) and Activity (audit log, filterable) pages.
+- Deliberately **not** built: Tasks/Compliance/Documents/Reports pages are present in the nav
+  as clearly-labeled "coming soon" placeholders rather than left broken or omitted — their
+  backend service layer doesn't exist yet (schema does), so building real UI against them
+  would be UI for endpoints that don't exist. They land when their backend module does.
+- Exit criteria met: `pnpm typecheck` / `pnpm lint` / `pnpm build` all clean; the full
+  register → create client → add portal → store credential → reveal (step-up) flow verified
+  against the running Phase 1–2 API. Not yet covered: automated browser/e2e tests for the web
+  app itself (no headless-browser tooling was available in this environment to add Playwright
+  runs) — a real gap, tracked for Phase 6 alongside the rest of the testing strategy below.
 
-## Phase 4 — Windows Desktop Application
-- Tauri shell, secure desktop auth (Credential Manager/DPAPI), client dashboard parity with web.
-- Portal launcher + `PortalAutomationAdapter` engine + state machine.
-- First adapter: GST portal — open, navigate, fill username/password, pause at CAPTCHA/OTP.
-- Exit criteria: manual QA script confirms autofill works and reliably stops before any
-  challenge on a real GST login attempt; no plaintext ever written to disk or logs (verified).
+## Phase 4 — Windows Desktop Application — built, compile-verified; visual/interactive QA still pending
+- Tauri (Rust + React) shell: secure desktop auth (refresh token in OS-native secure storage
+  via the `keyring` crate — Credential Manager/DPAPI on Windows), client list/detail.
+- Portal launcher: `PortalAutomationAdapter` trait, a config-driven registry (GST, Income Tax,
+  TRACES, MCA), and the open→fill→await-challenge→continue flow wired end to end against the
+  Phase 2 portal-session API — the credential's plaintext is redeemed and used entirely in
+  Rust and never crosses into the app's own JS/React context.
+- What's verified: `cargo check` / `cargo build` / `cargo clippy` all pass cleanly against
+  real WebKitGTK 2.50.4 headers and libraries; the Vite/React frontend typechecks and builds;
+  the compiled binary launches and initializes Tauri/GTK without crashing.
+- What's **not** verified: actual interactive rendering and the real autofill behavior against
+  a live portal. The sandbox this was built in has no `sudo`, so WebKitGTK's dev packages were
+  obtained via a no-root `.deb` download workaround (see apps/desktop/README.md) that hits a
+  WebKitGTK subprocess path mismatch — an artifact of that workaround, not of the app code,
+  and irrelevant to the real Windows/WebView2 target. Manual QA on a real Windows machine
+  against the real GST login page (this phase's original exit criterion) still needs to
+  happen before this adapter is trusted — tracked here, not skipped silently.
+- GST/Income Tax/TRACES/MCA selector values in the adapters are best-effort placeholders, not
+  verified against the live portals (no network access to browse them from this environment) —
+  same caveat, same tracking.
 
-## Phase 5 — Additional Portals
-- Income Tax, TRACES, MCA adapters; EPFO/ESIC/DGFT as configuration-only additions where
-  possible per the adapter-registry design.
-- Exit criteria: each adapter manually QA'd against its real portal login page.
+## Phase 5 — Additional Portals — registry complete; live QA still the blocking step
+- All seven seeded portals (GST, Income Tax, TRACES, MCA, EPFO, ESIC, DGFT) now have a
+  `PortalConfig` entry in `apps/desktop/src-tauri/src/portals/mod.rs`; all but GST are plain
+  data entries added with no code, confirming the adapter-registry design actually delivers
+  the "adding a portal is a config change" property it was designed for.
+- Before writing selectors, a live-fetch pass was actually run against each reachable login
+  page rather than guessing blind. Result, and why the selectors below are still unverified:
+  TRACES and the Income Tax e-filing portal serve an empty shell to a non-browser fetch (both
+  are client-rendered Angular apps — no login form exists in the static HTML), and MCA's login
+  page returned HTTP 403 to the fetch (these portals actively push back on non-browser
+  traffic, which is exactly the class of thing docs/threat-model.md already accounts for, and
+  exactly why this product's automation only ever runs from the user's own real desktop
+  browser session, never a server-side fetch). EPFO/ESIC/DGFT weren't fetched. So every
+  selector remains a best-effort placeholder.
+- New: Rust unit tests for the fill-script builder (`cargo test` in `apps/desktop/src-tauri`)
+  — every seeded portal code resolves to an adapter, the generated script never contains
+  `.submit()`/CAPTCHA/OTP handling, different portals produce different scripts, and a
+  password shaped like a script-injection attempt stays safely JSON-escaped rather than
+  breaking out of the injected script's string literal. This is real, automated coverage of
+  the one part of the automation engine that doesn't require a live browser to test.
+- Exit criteria **not yet met**: each adapter still needs manual QA against its real, rendered
+  portal login page on a real Windows machine (Phase 4's exit criterion, carried forward here
+  since it never ran) — this environment has no path to that (no Windows, and these specific
+  portals actively resist non-interactive/non-browser access, as just confirmed above).
 
 ## Phase 6 — Hardening & Launch Readiness
 - Full test suite pass (unit/integration/security/e2e — see Testing Strategy below).

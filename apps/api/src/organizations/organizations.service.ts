@@ -4,6 +4,13 @@ import { AuditService } from "../audit/audit.service";
 import { AppError } from "../common/errors/app-error";
 import type { RequestMeta } from "../auth/auth.service";
 
+// SUPER_ADMIN is a platform-operator role (docs/database-design.md §RBAC — "null = platform
+// system role"), not something a firm's own admin should ever be able to grant via
+// employees.manage. It's seeded alongside every other system role with the same
+// organizationId=null/isSystem=true shape, so it must be excluded explicitly rather than
+// relying on that shape alone to distinguish "assignable to a firm member" roles.
+const PLATFORM_ONLY_ROLES = new Set(["SUPER_ADMIN"]);
+
 @Injectable()
 export class OrganizationsService {
   constructor(
@@ -34,12 +41,7 @@ export class OrganizationsService {
     invitedBy: string,
     meta: RequestMeta,
   ) {
-    const role = await this.prisma.role.findFirst({
-      where: { id: roleId, OR: [{ organizationId }, { organizationId: null, isSystem: true }] },
-    });
-    if (!role) {
-      throw AppError.notFound("ROLE_NOT_FOUND", "Role not found for this organization");
-    }
+    await this.requireAssignableRole(organizationId, roleId);
 
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) {
@@ -83,6 +85,7 @@ export class OrganizationsService {
     meta: RequestMeta,
   ) {
     const member = await this.requireMember(organizationId, memberId);
+    await this.requireAssignableRole(organizationId, roleId);
     const updated = await this.prisma.organizationMember.update({
       where: { id: member.id },
       data: { roleId, status: member.status === "INVITED" ? "ACTIVE" : member.status, joinedAt: member.joinedAt ?? new Date() },
@@ -122,6 +125,22 @@ export class OrganizationsService {
     });
 
     return updated;
+  }
+
+  /**
+   * The only place a `roleId` supplied by a caller (invite or role-change) is trusted — every
+   * other path to a role must go through this. Scopes to the org's own custom roles plus
+   * global system roles, explicitly excluding platform-only ones
+   * (docs/security-review.md — privilege escalation via unscoped roleId).
+   */
+  private async requireAssignableRole(organizationId: string, roleId: string) {
+    const role = await this.prisma.role.findFirst({
+      where: { id: roleId, OR: [{ organizationId }, { organizationId: null, isSystem: true }] },
+    });
+    if (!role || PLATFORM_ONLY_ROLES.has(role.name)) {
+      throw AppError.notFound("ROLE_NOT_FOUND", "Role not found for this organization");
+    }
+    return role;
   }
 
   private async requireMember(organizationId: string, memberId: string) {

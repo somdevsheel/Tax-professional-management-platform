@@ -127,3 +127,8 @@ stateDiagram-v2
 4. Manual QA: verify the engine fills only the two intended fields and reliably pauses before
    any challenge, on a real login attempt.
 5. Ship behind the existing desktop auto-update channel.
+
+**Status (docs/development-roadmap.md, Phase 5):** all seven seeded portals have a registry
+entry following steps 1–3 as data-only config, GST's being the one dedicated adapter module.
+Step 4 (manual QA on a real login attempt) has not run for any of them — this is the actual
+gate before any of these are trusted, not a formality.

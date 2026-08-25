@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Headers, Ip, Param, Patch, Post } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Header, Headers, Ip, Param, Patch, Post } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
 import { CredentialsService } from "./credentials.service";
 import { CreateCredentialDto } from "./dto/create-credential.dto";
@@ -80,6 +80,7 @@ export class CredentialsController {
   // Deliberately tightly throttled — this is the one endpoint that can return plaintext to the
   // web UI at all, and only when the caller re-proves their own password (docs/security-design.md §6).
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Header("Cache-Control", "no-store, private")
   @Post("credentials/:id/reveal")
   @RequirePermission("credentials.reveal")
   async reveal(

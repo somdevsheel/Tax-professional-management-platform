@@ -572,6 +572,10 @@ model AuditLog {
 
   @@index([organizationId, createdAt])
   @@index([resourceType, resourceId])
+  // Backs the per-account login-lockout check (recent LOGIN_FAILED count for one user) —
+  // docs/security-review.md, added alongside that check so it doesn't become a table scan as
+  // this append-only table grows.
+  @@index([actorUserId, action, createdAt])
   @@map("audit_logs")
 }
 

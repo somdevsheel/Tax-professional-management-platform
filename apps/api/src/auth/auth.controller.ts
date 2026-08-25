@@ -70,6 +70,10 @@ export class AuthController {
     );
   }
 
+  // Logging out must never require an active organization context — a user who belongs to
+  // zero or multiple firms (organizationId is null until they pick one) still needs to be
+  // able to end their own session (docs/security-review.md — logout was unreachable for them).
+  @SkipTenantScope()
   @Post("logout")
   async logout(
     @CurrentUser() authContext: AuthContext,
@@ -85,6 +89,7 @@ export class AuthController {
     return { success: true, data: null };
   }
 
+  @SkipTenantScope()
   @Post("logout-all")
   async logoutAll(
     @CurrentUser() authContext: AuthContext,

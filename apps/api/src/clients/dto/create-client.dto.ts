@@ -4,12 +4,13 @@ import {
   IsArray,
   IsEmail,
   IsIn,
-  IsObject,
   IsOptional,
   IsString,
   MaxLength,
+  ValidateNested,
 } from "class-validator";
 import { ENTITY_TYPES, CLIENT_STATUSES } from "@tax-platform/types";
+import { AddressDto } from "./address.dto";
 
 export class CreateClientDto {
   @IsString()
@@ -40,8 +41,9 @@ export class CreateClientDto {
   cin?: string;
 
   @IsOptional()
-  @IsObject()
-  address?: Record<string, unknown>;
+  @ValidateNested()
+  @Type(() => AddressDto)
+  address?: AddressDto;
 
   @IsOptional()
   @IsEmail()
@@ -79,6 +81,7 @@ export class CreateClientDto {
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(20)
-  @Type(() => String)
+  @IsString({ each: true })
+  @MaxLength(50, { each: true })
   tags?: string[];
 }

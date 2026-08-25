@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Ip, Param, Post } from "@nestjs/common";
+import { Body, Controller, Get, Header, Headers, Ip, Param, Post } from "@nestjs/common";
 import { PortalSessionsService } from "./portal-sessions.service";
 import { CreatePortalSessionDto } from "./dto/create-portal-session.dto";
 import { ReportEventDto } from "./dto/report-event.dto";
@@ -36,7 +36,11 @@ export class PortalSessionsController {
   // Authenticated by the one-time session token itself (not the caller's JWT) — the desktop
   // app already proved authorization when it created the session; this is a narrow, single-use
   // handoff of the transient plaintext (docs/security-design.md §6).
+  // Cache-Control: no-store — a plaintext-bearing 200 GET response is otherwise heuristically
+  // cacheable by an intermediary, whose cache key is the URL while the actual secret lives in
+  // the X-Portal-Session-Token header (docs/security-review.md).
   @Public()
+  @Header("Cache-Control", "no-store, private")
   @Get(":id/credential")
   async getCredential(
     @Param("id") id: string,

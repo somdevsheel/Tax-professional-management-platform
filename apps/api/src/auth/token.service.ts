@@ -87,6 +87,13 @@ export class TokenService {
    * Rotates a refresh token. If the presented token was already rotated (reused), the entire
    * token family and its session are revoked — this is the reuse-detection signal for token
    * theft (docs/security-design.md §2).
+   *
+   * The "is this token still valid to rotate" check and the "mark it used" write are combined
+   * into a single conditional `updateMany` (the `claim` below) rather than a separate
+   * read-then-write, specifically so two concurrent requests presenting the identical raw
+   * token can't both win: only one `updateMany` call can flip `revokedAt` from null, so the
+   * loser reliably observes `count === 0` and is treated as reuse, closing a TOCTOU race a
+   * plain check-then-update has (docs/security-review.md).
    */
   async rotateRefreshToken(rawRefreshToken: string): Promise<IssuedTokens> {
     const tokenHash = this.hashToken(rawRefreshToken);
@@ -99,24 +106,27 @@ export class TokenService {
       throw AppError.unauthorized("INVALID_REFRESH_TOKEN", "Refresh token is invalid");
     }
 
-    if (existing.revokedAt || existing.expiresAt < new Date()) {
-      // Reuse of an already-rotated (or expired) token: treat as compromised, kill the family.
-      await this.prisma.refreshToken.updateMany({
-        where: { familyId: existing.familyId, revokedAt: null },
-        data: { revokedAt: new Date() },
-      });
-      await this.prisma.session.update({
-        where: { id: existing.sessionId },
-        data: { revokedAt: new Date() },
-      });
-      throw AppError.unauthorized(
-        "REFRESH_TOKEN_REUSE_DETECTED",
-        "This refresh token has already been used; the session has been revoked",
-      );
+    if (existing.expiresAt < new Date()) {
+      await this.killFamily(existing.familyId, existing.sessionId);
+      throw AppError.unauthorized("REFRESH_TOKEN_EXPIRED", "Refresh token has expired");
     }
 
     if (existing.session.revokedAt) {
       throw AppError.unauthorized("SESSION_REVOKED", "Session has been revoked");
+    }
+
+    const claim = await this.prisma.refreshToken.updateMany({
+      where: { id: existing.id, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    if (claim.count === 0) {
+      // Someone else (a concurrent request presenting the same token, or a genuinely earlier
+      // reuse) already claimed this token — treat as compromised, kill the whole family.
+      await this.killFamily(existing.familyId, existing.sessionId);
+      throw AppError.unauthorized(
+        "REFRESH_TOKEN_REUSE_DETECTED",
+        "This refresh token has already been used; the session has been revoked",
+      );
     }
 
     const newRawToken = randomBytes(32).toString("hex");
@@ -128,16 +138,9 @@ export class TokenService {
         expiresAt: existing.expiresAt,
       },
     });
-
     await this.prisma.$transaction([
-      this.prisma.refreshToken.update({
-        where: { id: existing.id },
-        data: { revokedAt: new Date(), replacedById: newToken.id },
-      }),
-      this.prisma.session.update({
-        where: { id: existing.sessionId },
-        data: { lastSeenAt: new Date() },
-      }),
+      this.prisma.refreshToken.update({ where: { id: existing.id }, data: { replacedById: newToken.id } }),
+      this.prisma.session.update({ where: { id: existing.sessionId }, data: { lastSeenAt: new Date() } }),
     ]);
 
     const { token, expiresIn } = this.signAccessToken(
@@ -151,6 +154,14 @@ export class TokenService {
       expiresIn,
       sessionId: existing.sessionId,
     };
+  }
+
+  private async killFamily(familyId: string, sessionId: string): Promise<void> {
+    await this.prisma.refreshToken.updateMany({
+      where: { familyId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    await this.prisma.session.update({ where: { id: sessionId }, data: { revokedAt: new Date() } });
   }
 
   async revokeSession(sessionId: string): Promise<void> {
@@ -180,11 +191,22 @@ export class TokenService {
     ]);
   }
 
-  /** Re-signs an access token reflecting a fresh organizationId without minting a new session. */
+  /**
+   * Re-signs an access token reflecting a fresh organizationId without minting a new session.
+   * Must re-check the session is still live — otherwise a revoked session (e.g. "log out all
+   * devices" after a stolen device) could keep minting fresh 15-minute access tokens forever
+   * through this endpoint alone, since it's the one token-issuing path that was reachable
+   * without first proving the refresh token was still valid (docs/security-review.md).
+   */
   async reissueAccessTokenForOrganization(
     sessionId: string,
     organizationId: string,
   ): Promise<{ accessToken: string; expiresIn: number }> {
+    const current = await this.prisma.session.findUnique({ where: { id: sessionId } });
+    if (!current || current.revokedAt || current.expiresAt < new Date()) {
+      throw AppError.unauthorized("SESSION_REVOKED", "Session has been revoked");
+    }
+
     const session = await this.prisma.session.update({
       where: { id: sessionId },
       data: { organizationId },

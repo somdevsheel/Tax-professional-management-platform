@@ -232,7 +232,12 @@ export class CredentialsService {
     const setting = await this.prisma.setting.findUnique({
       where: { organizationId_key: { organizationId, key: "credentials.revealEnabled" } },
     });
-    if (setting && setting.value === false) {
+    // No row at all = default-enabled (an org that has never touched this setting can still
+    // reveal). But once a row exists, only the literal boolean `true` re-enables it — any other
+    // stored shape (false, "false", null, {}, ...) fails closed. The previous `=== false` check
+    // only caught the exact literal `false` and silently left reveal enabled for every other
+    // malformed value, which is the wrong default for a kill switch (docs/security-review.md).
+    if (setting && setting.value !== true) {
       throw AppError.forbidden(
         "CREDENTIAL_REVEAL_DISABLED",
         "Revealing credential plaintext is disabled for this organization",

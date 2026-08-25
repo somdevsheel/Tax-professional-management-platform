@@ -94,7 +94,22 @@ export class PortalSessionsService {
   async get(organizationId: string, sessionId: string) {
     const session = await this.prisma.portalSession.findFirst({
       where: { id: sessionId, organizationId },
-      include: { events: { orderBy: { createdAt: "asc" } } },
+      // oneTimeTokenHash excluded deliberately — it's not independently exploitable (redemption
+      // still requires the raw token, hashed and compared server-side) but there's no reason to
+      // hand a secret-derived field to every caller with `credentials.use` (docs/security-review.md).
+      select: {
+        id: true,
+        organizationId: true,
+        clientId: true,
+        credentialId: true,
+        initiatedById: true,
+        status: true,
+        oneTimeTokenUsedAt: true,
+        expiresAt: true,
+        createdAt: true,
+        updatedAt: true,
+        events: { orderBy: { createdAt: "asc" } },
+      },
     });
     if (!session) {
       throw AppError.notFound("PORTAL_SESSION_NOT_FOUND", "Portal session not found");
@@ -103,9 +118,13 @@ export class PortalSessionsService {
   }
 
   /**
-   * Exchanges the one-time token for a transient plaintext credential. Single use: the token
-   * is marked used atomically and any repeat attempt fails, even with the correct token
-   * (docs/security-design.md §6).
+   * Exchanges the one-time token for a transient plaintext credential. Single use: "is this
+   * still unused" and "mark it used" are one conditional `updateMany` (the `claim` below), not
+   * a separate check-then-write — two concurrent redemption attempts with the same token
+   * (e.g. a legitimate fetch racing a captured-token replay) can otherwise both pass a plain
+   * check and both receive plaintext before either write lands. Only one `updateMany` can flip
+   * `oneTimeTokenUsedAt` from null, so the loser reliably gets `TOKEN_ALREADY_USED`
+   * (docs/security-review.md).
    */
   async redeemCredential(sessionId: string, rawToken: string, meta: RequestMeta) {
     const session = await this.prisma.portalSession.findUnique({ where: { id: sessionId } });
@@ -115,18 +134,18 @@ export class PortalSessionsService {
     if (session.oneTimeTokenHash !== this.hash(rawToken)) {
       throw AppError.unauthorized("INVALID_SESSION_TOKEN", "Invalid portal session token");
     }
-    if (session.oneTimeTokenUsedAt) {
-      throw AppError.unauthorized("TOKEN_ALREADY_USED", "This session token has already been used");
-    }
     if (session.expiresAt < new Date()) {
       await this.prisma.portalSession.update({ where: { id: sessionId }, data: { status: "EXPIRED" } });
       throw AppError.unauthorized("SESSION_TOKEN_EXPIRED", "This portal session has expired");
     }
 
-    await this.prisma.portalSession.update({
-      where: { id: sessionId },
+    const claim = await this.prisma.portalSession.updateMany({
+      where: { id: sessionId, oneTimeTokenUsedAt: null },
       data: { oneTimeTokenUsedAt: new Date(), status: "CREDENTIAL_ISSUED" },
     });
+    if (claim.count === 0) {
+      throw AppError.unauthorized("TOKEN_ALREADY_USED", "This session token has already been used");
+    }
 
     const plaintext = await this.credentials.decryptForPortalSession(session.organizationId, session.credentialId);
     await this.credentials.markUsed(session.credentialId);

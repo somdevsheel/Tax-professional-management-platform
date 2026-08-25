@@ -16,6 +16,7 @@ out/
 
 # Rust / Tauri
 apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
 
 # Logs
 *.log

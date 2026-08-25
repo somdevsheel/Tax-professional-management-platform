@@ -1,0 +1,35 @@
+[package]
+name = "tax-platform-desktop"
+version = "0.1.0"
+description = "Tax Practice Platform — Windows desktop client"
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "tax_platform_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-notification = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+# Cross-platform OS credential storage: Windows Credential Manager (DPAPI-backed) on Windows,
+# Secret Service/libsecret on Linux, Keychain on macOS — one abstraction, no hand-rolled
+# per-OS DPAPI bindings (docs/desktop-architecture.md §4, docs/security-design.md §10).
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+zeroize = "1"
+thiserror = "2"
+uuid = { version = "1", features = ["v4"] }
+
+[features]
+# Real browser-driven portal automation only compiles on Windows (WebView2), matching the
+# decision in docs/browser-automation-design.md §3. Other platforms compile the same command
+# surface but return PlatformNotSupported, so the whole app still builds and runs everywhere
+# for development.
+default = []

@@ -1,0 +1,16 @@
+{
+  "extends": "../config/tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "lib": ["ES2022", "DOM"],
+    // ESM output: Rollup/webpack (Vite's desktop build, Next's web build) statically analyze
+    // `export *` re-exports correctly for ESM but not for TS's CommonJS `__exportStar` helper,
+    // which caused ApiClient to appear "not exported" to Vite despite working fine under
+    // Node's own CJS `require()`. moduleResolution "bundler" means source imports stay
+    // extensionless — fine for bundler consumers, which are the only consumers of this dist.
+    "module": "ES2022",
+    "moduleResolution": "bundler"
+  },
+  "include": ["src"]
+}

@@ -10,6 +10,14 @@ import { AllExceptionsFilter } from "./common/filters/all-exceptions.filter";
  * request pipeline production traffic goes through.
  */
 export function configureApp(app: INestApplication): void {
+  // Without this, every request behind the load balancer/CDN in docs/deployment.md's topology
+  // arrives from the same proxy IP, so ThrottlerGuard's default IP-keyed rate limiting (and
+  // Ip()-based audit logging) collapses every real client into one bucket instead of limiting
+  // per-client (docs/security-review.md). Only trust the immediate hop, and only when the
+  // deployment topology actually has one (opt-in via env, not assumed).
+  if (process.env.TRUST_PROXY === "true") {
+    app.getHttpAdapter().getInstance().set("trust proxy", 1);
+  }
   app.use(helmet());
   app.use(cookieParser());
   app.enableCors({

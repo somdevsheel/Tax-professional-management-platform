@@ -15,6 +15,15 @@ export interface RequestMeta {
 /** The one global system role granted to the creator of a new firm. Seeded by prisma/seed.ts. */
 const FIRM_ADMIN_ROLE_NAME = "FIRM_ADMIN";
 
+/**
+ * Per-account login lockout window. `@Throttle` on the /auth/login route only limits by
+ * source IP, which a distributed attacker grinding one known email across many IPs sails
+ * straight through (docs/security-review.md). This is keyed by the account itself instead,
+ * using LOGIN_FAILED rows already being written — no new table.
+ */
+const LOGIN_LOCKOUT_WINDOW_MINUTES = 15;
+const LOGIN_LOCKOUT_MAX_FAILURES = 10;
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -113,6 +122,32 @@ export class AuthService {
         ipAddress: meta.ip,
         userAgent: meta.userAgent,
         metadata: { emailDomain: dto.email.split("@")[1] },
+      });
+      throw AppError.unauthorized("INVALID_CREDENTIALS", "Invalid email or password");
+    }
+
+    const recentFailures = await this.prisma.auditLog.count({
+      where: {
+        actorUserId: user.id,
+        action: "LOGIN_FAILED",
+        createdAt: { gte: new Date(Date.now() - LOGIN_LOCKOUT_WINDOW_MINUTES * 60_000) },
+      },
+    });
+    if (recentFailures >= LOGIN_LOCKOUT_MAX_FAILURES) {
+      // Still run the dummy verify so a locked-out account takes the same time as a normal
+      // failed attempt — don't give a timing signal that distinguishes "locked out" from
+      // "wrong password" on top of the identical response body/status below.
+      await this.password.verifyAgainstDummy();
+      await this.audit.log({
+        organizationId: null,
+        actorUserId: user.id,
+        action: "LOGIN_FAILED",
+        resourceType: "user",
+        resourceId: user.id,
+        result: "failure",
+        ipAddress: meta.ip,
+        userAgent: meta.userAgent,
+        metadata: { reason: "account_locked" },
       });
       throw AppError.unauthorized("INVALID_CREDENTIALS", "Invalid email or password");
     }
