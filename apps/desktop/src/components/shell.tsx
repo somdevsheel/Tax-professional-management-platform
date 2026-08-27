@@ -6,11 +6,11 @@ const NAV = [
   { to: "/dashboard", label: "Dashboard" },
   { to: "/clients", label: "Clients" },
   { to: "/portals", label: "Portals" },
-  { to: "/tasks", label: "Tasks", pending: true },
-  { to: "/compliance", label: "Compliance", pending: true },
-  { to: "/documents", label: "Documents", pending: true },
+  { to: "/tasks", label: "Tasks" },
+  { to: "/compliance", label: "Compliance" },
+  { to: "/documents", label: "Documents" },
   { to: "/employees", label: "Employees" },
-  { to: "/reports", label: "Reports", pending: true },
+  { to: "/reports", label: "Reports" },
   { to: "/activity", label: "Activity" },
   { to: "/settings", label: "Settings" },
 ];
@@ -34,18 +34,8 @@ export function Shell({ children }: { children: ReactNode }) {
       <aside className="sidebar" style={{ display: "flex", flexDirection: "column" }}>
         <h1>Tax Practice Platform</h1>
         {NAV.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            className={({ isActive }) => (isActive ? "active" : "")}
-            style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
-          >
-            <span>{item.label}</span>
-            {item.pending && (
-              <span className="badge" style={{ fontSize: 9, background: "#f1f5f9", color: "#94a3b8" }}>
-                soon
-              </span>
-            )}
+          <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? "active" : "")}>
+            {item.label}
           </NavLink>
         ))}
         <div style={{ marginTop: "auto", paddingTop: 24 }}>

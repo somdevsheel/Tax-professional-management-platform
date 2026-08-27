@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
-import { useClient, usePortalAccounts } from "../lib/hooks";
+import { CLIENT_STATUSES } from "@tax-platform/types";
+import { useClient, usePortalAccounts, useUpdateClient } from "../lib/hooks";
 import { PortalLaunchCard } from "../components/portal-launch-card";
 import { AddPortalAccountForm } from "../components/add-portal-account-form";
 
@@ -18,6 +19,7 @@ export function ClientDetailPage() {
   const clientId = params.id!;
   const client = useClient(clientId);
   const portalAccounts = usePortalAccounts(clientId);
+  const updateClient = useUpdateClient(clientId);
   const [showAddPortal, setShowAddPortal] = useState(false);
 
   if (client.isLoading) return <p className="muted">Loading…</p>;
@@ -33,7 +35,18 @@ export function ClientDetailPage() {
             <h2 style={{ margin: 0, fontSize: 18 }}>{data.name}</h2>
             <p className="muted" style={{ marginTop: 4 }}>{data.entityType.replace(/_/g, " ")}</p>
           </div>
-          <span className="badge">{data.status}</span>
+          <select
+            className="input"
+            style={{ width: "auto", marginBottom: 0, padding: "4px 8px", fontSize: 12 }}
+            value={data.status}
+            onChange={(e) => updateClient.mutate({ status: e.target.value })}
+          >
+            {CLIENT_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
         </div>
 
         <dl

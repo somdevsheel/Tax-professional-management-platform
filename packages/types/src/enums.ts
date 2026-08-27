@@ -36,6 +36,9 @@ export type ComplianceStatus = (typeof COMPLIANCE_STATUSES)[number];
 export const CREDENTIAL_STATUSES = ["ACTIVE", "NEEDS_ROTATION", "REVOKED"] as const;
 export type CredentialStatus = (typeof CREDENTIAL_STATUSES)[number];
 
+export const DOCUMENT_ACCESS_LEVELS = ["ORGANIZATION", "ASSIGNED_EMPLOYEES", "SPECIFIC_USERS"] as const;
+export type DocumentAccessLevel = (typeof DOCUMENT_ACCESS_LEVELS)[number];
+
 export const PORTAL_CODES = [
   "GST",
   "INCOME_TAX",
@@ -77,9 +80,14 @@ export const AUDIT_ACTIONS = [
   "DOCUMENT_DOWNLOADED",
   "DOCUMENT_DELETED",
   "TASK_CREATED",
+  "TASK_UPDATED",
   "TASK_ASSIGNED",
   "TASK_COMPLETED",
+  "TASK_DELETED",
+  "COMPLIANCE_ITEM_CREATED",
+  "COMPLIANCE_ITEM_UPDATED",
   "COMPLIANCE_STATUS_CHANGED",
+  "COMPLIANCE_ITEM_DELETED",
   "AUDIT_LOG_VIEWED",
   "SETTINGS_CHANGED",
 ] as const;

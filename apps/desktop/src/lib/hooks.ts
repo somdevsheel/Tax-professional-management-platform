@@ -29,6 +29,18 @@ export function useCreateClient() {
   });
 }
 
+export function useUpdateClient(id: string) {
+  const qc = useQueryClient();
+  const { organizationId } = useAuth();
+  return useMutation({
+    mutationFn: (body: Parameters<typeof apiClient.clients.update>[1]) => apiClient.clients.update(id, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["clients", organizationId] });
+      qc.invalidateQueries({ queryKey: ["client", organizationId, id] });
+    },
+  });
+}
+
 export function usePortalAccounts(clientId: string) {
   const { organizationId } = useAuth();
   return useQuery({
@@ -134,6 +146,199 @@ export function useCurrentOrganization() {
   return useQuery({
     queryKey: ["organization", organizationId],
     queryFn: apiClient.organizations.current,
+    enabled: !!organizationId,
+  });
+}
+
+// ---- Tasks — same shape as apps/web/lib/hooks.ts ----
+export function useTasks(params: { status?: string; priority?: string; assignedTo?: string; clientId?: string }) {
+  const { organizationId } = useAuth();
+  return useQuery({
+    queryKey: ["tasks", organizationId, params],
+    queryFn: () => apiClient.tasks.list(params),
+    enabled: !!organizationId,
+  });
+}
+
+export function useTask(id: string) {
+  const { organizationId } = useAuth();
+  return useQuery({
+    queryKey: ["task", organizationId, id],
+    queryFn: () => apiClient.tasks.get(id),
+    enabled: !!organizationId && !!id,
+  });
+}
+
+export function useCreateTask() {
+  const qc = useQueryClient();
+  const { organizationId } = useAuth();
+  return useMutation({
+    mutationFn: apiClient.tasks.create,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["tasks", organizationId] }),
+  });
+}
+
+export function useUpdateTask(id: string) {
+  const qc = useQueryClient();
+  const { organizationId } = useAuth();
+  return useMutation({
+    mutationFn: (body: Parameters<typeof apiClient.tasks.update>[1]) => apiClient.tasks.update(id, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tasks", organizationId] });
+      qc.invalidateQueries({ queryKey: ["task", organizationId, id] });
+    },
+  });
+}
+
+export function useAssignTask() {
+  const qc = useQueryClient();
+  const { organizationId } = useAuth();
+  return useMutation({
+    mutationFn: (vars: { id: string; assignedTo: string | null }) => apiClient.tasks.assign(vars.id, vars.assignedTo),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["tasks", organizationId] });
+      qc.invalidateQueries({ queryKey: ["task", organizationId, vars.id] });
+    },
+  });
+}
+
+export function useCompleteTask() {
+  const qc = useQueryClient();
+  const { organizationId } = useAuth();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.tasks.complete(id),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: ["tasks", organizationId] });
+      qc.invalidateQueries({ queryKey: ["task", organizationId, id] });
+    },
+  });
+}
+
+export function useDeleteTask() {
+  const qc = useQueryClient();
+  const { organizationId } = useAuth();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.tasks.remove(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["tasks", organizationId] }),
+  });
+}
+
+export function useTaskComments(id: string) {
+  const { organizationId } = useAuth();
+  return useQuery({
+    queryKey: ["task-comments", organizationId, id],
+    queryFn: () => apiClient.tasks.listComments(id),
+    enabled: !!organizationId && !!id,
+  });
+}
+
+export function useAddTaskComment(id: string) {
+  const qc = useQueryClient();
+  const { organizationId } = useAuth();
+  return useMutation({
+    mutationFn: (body: string) => apiClient.tasks.addComment(id, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["task-comments", organizationId, id] }),
+  });
+}
+
+// ---- Compliance — same shape as apps/web/lib/hooks.ts ----
+export function useComplianceCatalog() {
+  return useQuery({ queryKey: ["compliance-catalog"], queryFn: apiClient.compliance.catalog });
+}
+
+export function useComplianceItems(params: { status?: string; clientId?: string }) {
+  const { organizationId } = useAuth();
+  return useQuery({
+    queryKey: ["compliance-items", organizationId, params],
+    queryFn: () => apiClient.compliance.list(params),
+    enabled: !!organizationId,
+  });
+}
+
+export function useCreateComplianceItem() {
+  const qc = useQueryClient();
+  const { organizationId } = useAuth();
+  return useMutation({
+    mutationFn: (vars: { clientId: string; body: Parameters<typeof apiClient.compliance.create>[1] }) =>
+      apiClient.compliance.create(vars.clientId, vars.body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["compliance-items", organizationId] }),
+  });
+}
+
+export function useUpdateComplianceItem() {
+  const qc = useQueryClient();
+  const { organizationId } = useAuth();
+  return useMutation({
+    mutationFn: (vars: { id: string; body: Parameters<typeof apiClient.compliance.update>[1] }) =>
+      apiClient.compliance.update(vars.id, vars.body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["compliance-items", organizationId] }),
+  });
+}
+
+export function useDeleteComplianceItem() {
+  const qc = useQueryClient();
+  const { organizationId } = useAuth();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.compliance.remove(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["compliance-items", organizationId] }),
+  });
+}
+
+// ---- Documents — same shape as apps/web/lib/hooks.ts ----
+export function useDocumentCategories() {
+  return useQuery({ queryKey: ["document-categories"], queryFn: apiClient.documents.categories });
+}
+
+export function useCreateDocumentCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: apiClient.documents.createCategory,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["document-categories"] }),
+  });
+}
+
+export function useDocuments(params: { clientId?: string; categoryId?: string; search?: string }) {
+  const { organizationId } = useAuth();
+  return useQuery({
+    queryKey: ["documents", organizationId, params],
+    queryFn: () => apiClient.documents.list(params),
+    enabled: !!organizationId,
+  });
+}
+
+export function useUploadDocument() {
+  const qc = useQueryClient();
+  const { organizationId } = useAuth();
+  return useMutation({
+    mutationFn: (vars: { file: File; clientId?: string; categoryId?: string; accessLevel?: string; tags?: string }) =>
+      vars.clientId
+        ? apiClient.documents.uploadForClient(vars.clientId, vars.file, vars.file.name, vars)
+        : apiClient.documents.upload(vars.file, vars.file.name, vars),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["documents", organizationId] }),
+  });
+}
+
+export function useDeleteDocument() {
+  const qc = useQueryClient();
+  const { organizationId } = useAuth();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.documents.remove(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["documents", organizationId] }),
+  });
+}
+
+export function useDownloadDocument() {
+  return useMutation({
+    mutationFn: (id: string) => apiClient.documents.getDownloadUrl(id),
+  });
+}
+
+// ---- Reports ----
+export function useReportsSummary() {
+  const { organizationId } = useAuth();
+  return useQuery({
+    queryKey: ["reports-summary", organizationId],
+    queryFn: apiClient.reports.summary,
     enabled: !!organizationId,
   });
 }

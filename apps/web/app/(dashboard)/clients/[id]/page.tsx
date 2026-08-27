@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
-import { useClient, usePortalAccounts } from "@/lib/hooks";
+import { CLIENT_STATUSES } from "@tax-platform/types";
+import { useClient, usePortalAccounts, useUpdateClient } from "@/lib/hooks";
 import { PortalAccountCard } from "@/components/portal-account-card";
 import { AddPortalAccountForm } from "@/components/add-portal-account-form";
 
@@ -15,10 +16,18 @@ const INFO_FIELDS: Array<{ key: "pan" | "gstin" | "tan" | "cin" | "email" | "pho
   { key: "phone", label: "Phone" },
 ];
 
+const STATUS_BADGE: Record<string, string> = {
+  ACTIVE: "bg-green-50 text-green-700",
+  ONBOARDING: "bg-blue-50 text-blue-700",
+  INACTIVE: "bg-slate-100 text-slate-500",
+  OFFBOARDED: "bg-red-50 text-red-700",
+};
+
 export default function ClientDetailPage() {
   const params = useParams<{ id: string }>();
   const clientQuery = useClient(params.id);
   const portalAccounts = usePortalAccounts(params.id);
+  const updateClient = useUpdateClient(params.id);
   const [showAddPortal, setShowAddPortal] = useState(false);
 
   const client = clientQuery.data;
@@ -38,7 +47,17 @@ export default function ClientDetailPage() {
             <h1 className="text-xl font-semibold text-slate-900">{client.name}</h1>
             <p className="text-sm text-slate-500">{client.entityType.replace(/_/g, " ")}</p>
           </div>
-          <span className="badge bg-slate-100 text-slate-600">{client.status}</span>
+          <select
+            className={`badge border-0 text-xs ${STATUS_BADGE[client.status]}`}
+            value={client.status}
+            onChange={(e) => updateClient.mutate({ status: e.target.value })}
+          >
+            {CLIENT_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
         </div>
 
         <dl className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3">

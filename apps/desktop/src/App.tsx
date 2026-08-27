@@ -12,6 +12,7 @@ import { EmployeesPage } from "./pages/employees";
 import { ActivityPage } from "./pages/activity";
 import { SettingsPage } from "./pages/settings";
 import { TasksPage } from "./pages/tasks";
+import { TaskDetailPage } from "./pages/task-detail";
 import { CompliancePage } from "./pages/compliance";
 import { DocumentsPage } from "./pages/documents";
 import { ReportsPage } from "./pages/reports";
@@ -42,6 +43,7 @@ export function App() {
         <Route path="/clients/:id" element={<ClientDetailPage />} />
         <Route path="/portals" element={<PortalsPage />} />
         <Route path="/tasks" element={<TasksPage />} />
+        <Route path="/tasks/:id" element={<TaskDetailPage />} />
         <Route path="/compliance" element={<CompliancePage />} />
         <Route path="/documents" element={<DocumentsPage />} />
         <Route path="/employees" element={<EmployeesPage />} />

@@ -151,8 +151,8 @@ export function PortalAccountCard({ account }: { account: PortalAccount }) {
       {launchPhase === "awaiting_challenge" && (
         <div className="challenge-banner mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
           <p className="mb-2">
-            Username and password were sent to the portal tab — if the fields didn't populate
-            automatically (the portal's login page may not have loaded, or its layout changed),
+            Username and password were sent to the portal tab — if the fields didn&apos;t populate
+            automatically (the portal&apos;s login page may not have loaded, or its layout changed),
             enter them manually. Complete any CAPTCHA/OTP/MFA there, then come back and click
             Continue.
           </p>

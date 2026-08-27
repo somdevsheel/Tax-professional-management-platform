@@ -7,6 +7,8 @@ import { LoggerModule } from "nestjs-pino";
 import { PrismaModule } from "./infra/prisma/prisma.module";
 import { JwtKeysModule } from "./infra/jwt-keys/jwt-keys.module";
 import { KmsModule } from "./infra/kms/kms.module";
+import { ObjectStorageModule } from "./infra/object-storage/object-storage.module";
+import { AntivirusModule } from "./infra/antivirus/antivirus.module";
 import { RbacModule } from "./rbac/rbac.module";
 import { AuditModule } from "./audit/audit.module";
 import { AuthModule } from "./auth/auth.module";
@@ -15,6 +17,10 @@ import { ClientsModule } from "./clients/clients.module";
 import { PortalsModule } from "./portals/portals.module";
 import { CredentialsModule } from "./credentials/credentials.module";
 import { PortalSessionsModule } from "./portal-sessions/portal-sessions.module";
+import { TasksModule } from "./tasks/tasks.module";
+import { ComplianceModule } from "./compliance/compliance.module";
+import { DocumentsModule } from "./documents/documents.module";
+import { ReportsModule } from "./reports/reports.module";
 import { HealthModule } from "./health/health.module";
 
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
@@ -62,6 +68,8 @@ const REDACT_PATHS = [
     PrismaModule,
     JwtKeysModule,
     KmsModule,
+    ObjectStorageModule,
+    AntivirusModule,
     RbacModule,
     AuditModule,
     AuthModule,
@@ -70,6 +78,10 @@ const REDACT_PATHS = [
     PortalsModule,
     CredentialsModule,
     PortalSessionsModule,
+    TasksModule,
+    ComplianceModule,
+    DocumentsModule,
+    ReportsModule,
     HealthModule,
   ],
   providers: [

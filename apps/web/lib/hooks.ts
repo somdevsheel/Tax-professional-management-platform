@@ -39,6 +39,18 @@ export function useCreateClient() {
   });
 }
 
+export function useUpdateClient(id: string) {
+  const qc = useQueryClient();
+  const org = useOrgScope();
+  return useMutation({
+    mutationFn: (body: Parameters<typeof apiClient.clients.update>[1]) => apiClient.clients.update(id, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["clients", org] });
+      qc.invalidateQueries({ queryKey: ["client", org, id] });
+    },
+  });
+}
+
 export function usePortalCatalog() {
   return useQuery({ queryKey: ["portal-catalog"], queryFn: apiClient.portals.catalog });
 }
@@ -139,6 +151,213 @@ export function useCurrentOrganization() {
   return useQuery({
     queryKey: ["organization", org],
     queryFn: apiClient.organizations.current,
+    enabled: !!org,
+  });
+}
+
+// ---- Tasks ----
+export function useTasks(params: {
+  status?: string;
+  priority?: string;
+  assignedTo?: string;
+  clientId?: string;
+  search?: string;
+}) {
+  const org = useOrgScope();
+  return useQuery({
+    queryKey: ["tasks", org, params],
+    queryFn: () => apiClient.tasks.list(params),
+    enabled: !!org,
+  });
+}
+
+export function useTask(id: string) {
+  const org = useOrgScope();
+  return useQuery({
+    queryKey: ["task", org, id],
+    queryFn: () => apiClient.tasks.get(id),
+    enabled: !!org && !!id,
+  });
+}
+
+export function useCreateTask() {
+  const qc = useQueryClient();
+  const org = useOrgScope();
+  return useMutation({
+    mutationFn: apiClient.tasks.create,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["tasks", org] }),
+  });
+}
+
+export function useUpdateTask(id: string) {
+  const qc = useQueryClient();
+  const org = useOrgScope();
+  return useMutation({
+    mutationFn: (body: Parameters<typeof apiClient.tasks.update>[1]) => apiClient.tasks.update(id, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tasks", org] });
+      qc.invalidateQueries({ queryKey: ["task", org, id] });
+    },
+  });
+}
+
+/** Takes the task id per-call (like useDeleteTask), not baked into the hook — a list page needs
+ *  one mutation shared across many rows, each with its own id. */
+export function useAssignTask() {
+  const qc = useQueryClient();
+  const org = useOrgScope();
+  return useMutation({
+    mutationFn: (vars: { id: string; assignedTo: string | null }) => apiClient.tasks.assign(vars.id, vars.assignedTo),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["tasks", org] });
+      qc.invalidateQueries({ queryKey: ["task", org, vars.id] });
+    },
+  });
+}
+
+export function useCompleteTask() {
+  const qc = useQueryClient();
+  const org = useOrgScope();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.tasks.complete(id),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: ["tasks", org] });
+      qc.invalidateQueries({ queryKey: ["task", org, id] });
+    },
+  });
+}
+
+export function useDeleteTask() {
+  const qc = useQueryClient();
+  const org = useOrgScope();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.tasks.remove(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["tasks", org] }),
+  });
+}
+
+export function useTaskComments(id: string) {
+  const org = useOrgScope();
+  return useQuery({
+    queryKey: ["task-comments", org, id],
+    queryFn: () => apiClient.tasks.listComments(id),
+    enabled: !!org && !!id,
+  });
+}
+
+export function useAddTaskComment(id: string) {
+  const qc = useQueryClient();
+  const org = useOrgScope();
+  return useMutation({
+    mutationFn: (body: string) => apiClient.tasks.addComment(id, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["task-comments", org, id] }),
+  });
+}
+
+// ---- Compliance ----
+export function useComplianceCatalog() {
+  return useQuery({ queryKey: ["compliance-catalog"], queryFn: apiClient.compliance.catalog });
+}
+
+export function useComplianceItems(params: { status?: string; clientId?: string }) {
+  const org = useOrgScope();
+  return useQuery({
+    queryKey: ["compliance-items", org, params],
+    queryFn: () => apiClient.compliance.list(params),
+    enabled: !!org,
+  });
+}
+
+export function useCreateComplianceItem() {
+  const qc = useQueryClient();
+  const org = useOrgScope();
+  return useMutation({
+    mutationFn: (vars: { clientId: string; body: Parameters<typeof apiClient.compliance.create>[1] }) =>
+      apiClient.compliance.create(vars.clientId, vars.body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["compliance-items", org] }),
+  });
+}
+
+export function useUpdateComplianceItem() {
+  const qc = useQueryClient();
+  const org = useOrgScope();
+  return useMutation({
+    mutationFn: (vars: { id: string; body: Parameters<typeof apiClient.compliance.update>[1] }) =>
+      apiClient.compliance.update(vars.id, vars.body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["compliance-items", org] }),
+  });
+}
+
+export function useDeleteComplianceItem() {
+  const qc = useQueryClient();
+  const org = useOrgScope();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.compliance.remove(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["compliance-items", org] }),
+  });
+}
+
+// ---- Documents ----
+export function useDocumentCategories() {
+  return useQuery({ queryKey: ["document-categories"], queryFn: apiClient.documents.categories });
+}
+
+export function useCreateDocumentCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: apiClient.documents.createCategory,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["document-categories"] }),
+  });
+}
+
+export function useDocuments(params: { clientId?: string; categoryId?: string; search?: string }) {
+  const org = useOrgScope();
+  return useQuery({
+    queryKey: ["documents", org, params],
+    queryFn: () => apiClient.documents.list(params),
+    enabled: !!org,
+  });
+}
+
+export function useUploadDocument() {
+  const qc = useQueryClient();
+  const org = useOrgScope();
+  return useMutation({
+    mutationFn: (vars: {
+      file: File;
+      clientId?: string;
+      categoryId?: string;
+      accessLevel?: string;
+      tags?: string;
+    }) =>
+      vars.clientId
+        ? apiClient.documents.uploadForClient(vars.clientId, vars.file, vars.file.name, vars)
+        : apiClient.documents.upload(vars.file, vars.file.name, vars),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["documents", org] }),
+  });
+}
+
+export function useDeleteDocument() {
+  const qc = useQueryClient();
+  const org = useOrgScope();
+  return useMutation({
+    mutationFn: (id: string) => apiClient.documents.remove(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["documents", org] }),
+  });
+}
+
+export function useDownloadDocument() {
+  return useMutation({
+    mutationFn: (id: string) => apiClient.documents.getDownloadUrl(id),
+  });
+}
+
+// ---- Reports ----
+export function useReportsSummary() {
+  const org = useOrgScope();
+  return useQuery({
+    queryKey: ["reports-summary", org],
+    queryFn: apiClient.reports.summary,
     enabled: !!org,
   });
 }

@@ -1,4 +1,13 @@
-import type { AuditAction, ClientStatus, CredentialStatus, EntityType } from "@tax-platform/types";
+import type {
+  AuditAction,
+  ClientStatus,
+  ComplianceStatus,
+  CredentialStatus,
+  DocumentAccessLevel,
+  EntityType,
+  TaskPriority,
+  TaskStatus,
+} from "@tax-platform/types";
 
 export interface ApiSuccess<T> {
   success: true;
@@ -192,6 +201,133 @@ export interface PortalSessionDetail {
   status: string;
   expiresAt: string;
   events: Array<{ id: string; type: string; createdAt: string }>;
+}
+
+export interface Task {
+  id: string;
+  organizationId: string;
+  clientId: string | null;
+  portalAccountId: string | null;
+  title: string;
+  description: string | null;
+  status: TaskStatus;
+  priority: TaskPriority;
+  dueDate: string | null;
+  assignedTo: string | null;
+  createdById: string;
+  parentTaskId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  client?: { id: string; name: string } | null;
+}
+
+export interface TaskComment {
+  id: string;
+  taskId: string;
+  authorId: string;
+  body: string;
+  createdAt: string;
+}
+
+export interface TaskDetail extends Task {
+  comments: TaskComment[];
+}
+
+export interface CreateTaskInput {
+  title: string;
+  description?: string;
+  clientId?: string;
+  portalAccountId?: string;
+  priority?: string;
+  dueDate?: string;
+  assignedTo?: string;
+  parentTaskId?: string;
+}
+
+export interface UpdateTaskInput {
+  title?: string;
+  description?: string;
+  clientId?: string;
+  portalAccountId?: string;
+  priority?: string;
+  status?: string;
+  dueDate?: string;
+}
+
+export interface ComplianceType {
+  id: string;
+  organizationId: string | null;
+  code: string;
+  name: string;
+  category: string;
+  periodicity: string;
+}
+
+export interface ComplianceItem {
+  id: string;
+  organizationId: string;
+  clientId: string;
+  complianceTypeId: string;
+  financialYear: string;
+  assessmentYear: string | null;
+  dueDate: string;
+  filingDate: string | null;
+  status: ComplianceStatus;
+  assignedTo: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  client?: { id: string; name: string };
+  complianceType?: ComplianceType;
+}
+
+export interface CreateComplianceItemInput {
+  complianceTypeId: string;
+  financialYear: string;
+  assessmentYear?: string;
+  dueDate: string;
+  assignedTo?: string;
+  notes?: string;
+}
+
+export interface UpdateComplianceItemInput {
+  dueDate?: string;
+  filingDate?: string;
+  status?: string;
+  assignedTo?: string;
+  notes?: string;
+}
+
+export interface DocumentCategory {
+  id: string;
+  organizationId: string | null;
+  name: string;
+  parentId: string | null;
+}
+
+export interface DocumentMetadata {
+  id: string;
+  organizationId: string;
+  clientId: string | null;
+  categoryId: string | null;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  checksumSha256: string;
+  tags: string[];
+  uploadedById: string;
+  accessLevel: DocumentAccessLevel;
+  createdAt: string;
+  updatedAt: string;
+  client?: { id: string; name: string } | null;
+  category?: DocumentCategory | null;
+}
+
+export interface ReportsSummary {
+  clients: { total: number; byStatus: Record<string, number> };
+  tasks: { total: number; byStatus: Record<string, number>; byPriority: Record<string, number>; overdueCount: number };
+  compliance: { total: number; byStatus: Record<string, number>; overdueCount: number; dueNext30DaysCount: number };
+  documents: { total: number; totalSizeBytes: number };
 }
 
 export interface AuditLogEntry {

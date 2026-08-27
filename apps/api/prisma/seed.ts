@@ -74,6 +74,23 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
   READ_ONLY: ["clients.view", "documents.view", "tasks.view", "compliance.view", "reports.view"],
 };
 
+// Global catalog (organizationId: null), same "seeded once, browsable by any org" shape as
+// PORTALS below — a firm picks from these when tracking a filing for a client rather than
+// typing periodicity/category by hand each time.
+const COMPLIANCE_TYPES: Array<{ code: string; name: string; category: string; periodicity: string }> = [
+  { code: "GSTR1", name: "GSTR-1", category: "GST", periodicity: "MONTHLY" },
+  { code: "GSTR3B", name: "GSTR-3B", category: "GST", periodicity: "MONTHLY" },
+  { code: "GSTR9", name: "GSTR-9 (Annual Return)", category: "GST", periodicity: "ANNUAL" },
+  { code: "ITR", name: "Income Tax Return Filing", category: "INCOME_TAX", periodicity: "ANNUAL" },
+  { code: "ADVANCE_TAX", name: "Advance Tax Payment", category: "INCOME_TAX", periodicity: "QUARTERLY" },
+  { code: "TDS_24Q", name: "TDS Return — Form 24Q (Salary)", category: "TDS", periodicity: "QUARTERLY" },
+  { code: "TDS_26Q", name: "TDS Return — Form 26Q (Non-Salary)", category: "TDS", periodicity: "QUARTERLY" },
+  { code: "AOC4", name: "AOC-4 (Financial Statements)", category: "MCA", periodicity: "ANNUAL" },
+  { code: "MGT7", name: "MGT-7 (Annual Return)", category: "MCA", periodicity: "ANNUAL" },
+  { code: "PF_RETURN", name: "PF Return (ECR)", category: "PF_ESI", periodicity: "MONTHLY" },
+  { code: "ESI_RETURN", name: "ESI Return", category: "PF_ESI", periodicity: "MONTHLY" },
+];
+
 const PORTALS: Array<{ code: string; name: string; category: string; baseUrl: string; loginUrl: string }> = [
   { code: "GST", name: "GST Portal", category: "GST", baseUrl: "https://www.gst.gov.in", loginUrl: "https://services.gst.gov.in/services/login" },
   { code: "INCOME_TAX", name: "Income Tax e-Filing", category: "INCOME_TAX", baseUrl: "https://www.incometax.gov.in", loginUrl: "https://eportal.incometax.gov.in/iec/foservices/#/login" },
@@ -129,6 +146,25 @@ async function main() {
       update: { name: portal.name, category: portal.category, baseUrl: portal.baseUrl, loginUrl: portal.loginUrl },
       create: { ...portal, isActive: true, configSchema: {} },
     });
+  }
+
+  console.log("Seeding compliance type catalog...");
+  for (const type of COMPLIANCE_TYPES) {
+    // Not a plain upsert: Prisma's compound-unique `where` shape (organizationId_code) can't
+    // express organizationId: null for a nullable field in this Prisma version, so this does
+    // the find-then-create-or-update by hand instead.
+    const existing = await prisma.complianceType.findFirst({
+      where: { organizationId: null, code: type.code },
+      select: { id: true },
+    });
+    if (existing) {
+      await prisma.complianceType.update({
+        where: { id: existing.id },
+        data: { name: type.name, category: type.category, periodicity: type.periodicity },
+      });
+    } else {
+      await prisma.complianceType.create({ data: { ...type, organizationId: null } });
+    }
   }
 
   console.log("Seed complete.");
