@@ -1,11 +1,16 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Inject } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { createHash, randomBytes } from "node:crypto";
 import { PrismaService } from "../infra/prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
 import { AppError } from "../common/errors/app-error";
+import { EMAIL_SERVICE, type EmailService } from "../infra/email/email-service.interface";
 import { PasswordService } from "./password.service";
 import { TokenService, IssuedTokens } from "./token.service";
 import type { RegisterDto } from "./dto/register.dto";
 import type { LoginDto } from "./dto/login.dto";
+import type { ForgotPasswordDto } from "./dto/forgot-password.dto";
+import type { ResetPasswordDto } from "./dto/reset-password.dto";
 
 export interface RequestMeta {
   ip: string | null;
@@ -24,6 +29,11 @@ const FIRM_ADMIN_ROLE_NAME = "FIRM_ADMIN";
 const LOGIN_LOCKOUT_WINDOW_MINUTES = 15;
 const LOGIN_LOCKOUT_MAX_FAILURES = 10;
 
+// Short-TTL per docs/security-design.md §2 ("Password reset: single-use, short-TTL signed
+// token"). 30 minutes balances "long enough that a real user's own email round-trip doesn't
+// expire it" against "short enough that a leaked-but-unused link stops being useful quickly."
+const PASSWORD_RESET_TOKEN_TTL_MINUTES = 30;
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -31,6 +41,8 @@ export class AuthService {
     private readonly password: PasswordService,
     private readonly tokens: TokenService,
     private readonly audit: AuditService,
+    private readonly config: ConfigService,
+    @Inject(EMAIL_SERVICE) private readonly email: EmailService,
   ) {}
 
   async register(dto: RegisterDto, meta: RequestMeta) {
@@ -234,6 +246,108 @@ export class AuthService {
       throw AppError.forbidden("NOT_A_MEMBER", "You are not an active member of this organization");
     }
     return this.tokens.reissueAccessTokenForOrganization(sessionId, organizationId);
+  }
+
+  /**
+   * Always responds the same way whether or not the email matches a real account — a
+   * distinguishable response here is a user-enumeration oracle. The audit log still records
+   * which case happened (result: "failure" with no resourceId for an unknown email), same
+   * asymmetry as login's own LOGIN_FAILED handling above.
+   */
+  async forgotPassword(dto: ForgotPasswordDto, meta: RequestMeta): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    if (!user) {
+      await this.audit.log({
+        organizationId: null,
+        actorUserId: null,
+        action: "PASSWORD_RESET_REQUESTED",
+        resourceType: "user",
+        result: "failure",
+        ipAddress: meta.ip,
+        userAgent: meta.userAgent,
+        metadata: { emailDomain: dto.email.split("@")[1] },
+      });
+      return;
+    }
+
+    // Raw token exists only in memory here and in the one email sent below — never persisted;
+    // only its hash is stored, so a database read alone can never produce a usable token
+    // (same reasoning as RefreshToken — docs/security-design.md §2).
+    const rawToken = randomBytes(32).toString("hex");
+    const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+    await this.prisma.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        tokenHash,
+        expiresAt: new Date(Date.now() + PASSWORD_RESET_TOKEN_TTL_MINUTES * 60_000),
+      },
+    });
+
+    const webAppOrigin = (this.config.get<string>("WEB_APP_ORIGIN") ?? "http://localhost:3000").split(",")[0];
+    const resetUrl = `${webAppOrigin}/reset-password?token=${rawToken}`;
+    await this.email.send({
+      to: user.email,
+      subject: "Reset your Tax Practice Platform password",
+      text:
+        `We received a request to reset your password. This link expires in ` +
+        `${PASSWORD_RESET_TOKEN_TTL_MINUTES} minutes and can only be used once:\n\n${resetUrl}\n\n` +
+        "If you didn't request this, you can safely ignore this email — your password won't change.",
+    });
+
+    await this.audit.log({
+      organizationId: null,
+      actorUserId: user.id,
+      action: "PASSWORD_RESET_REQUESTED",
+      resourceType: "user",
+      resourceId: user.id,
+      result: "success",
+      ipAddress: meta.ip,
+      userAgent: meta.userAgent,
+    });
+  }
+
+  async resetPassword(dto: ResetPasswordDto, meta: RequestMeta): Promise<void> {
+    const tokenHash = createHash("sha256").update(dto.token).digest("hex");
+    const resetToken = await this.prisma.passwordResetToken.findUnique({ where: { tokenHash } });
+
+    if (!resetToken || resetToken.usedAt || resetToken.expiresAt < new Date()) {
+      await this.audit.log({
+        organizationId: null,
+        actorUserId: resetToken?.userId ?? null,
+        action: "PASSWORD_RESET_COMPLETED",
+        resourceType: "user",
+        result: "failure",
+        ipAddress: meta.ip,
+        userAgent: meta.userAgent,
+        metadata: { reason: !resetToken ? "unknown_token" : resetToken.usedAt ? "already_used" : "expired" },
+      });
+      throw AppError.unauthorized("INVALID_RESET_TOKEN", "This password reset link is invalid or has expired");
+    }
+
+    const passwordHash = await this.password.hash(dto.newPassword);
+
+    // Single-use: marking usedAt happens in the same transaction as the password change, so a
+    // token can never be raced into resetting the password twice.
+    await this.prisma.$transaction([
+      this.prisma.user.update({ where: { id: resetToken.userId }, data: { passwordHash } }),
+      this.prisma.passwordResetToken.update({ where: { id: resetToken.id }, data: { usedAt: new Date() } }),
+    ]);
+
+    // Every session for this user must end — a successful reset means whoever just proved
+    // control of the account's email should be the only one still signed in anywhere
+    // (docs/security-design.md §2: "all sessions/refresh tokens for that user are revoked").
+    await this.tokens.revokeAllSessionsForUser(resetToken.userId);
+
+    await this.audit.log({
+      organizationId: null,
+      actorUserId: resetToken.userId,
+      action: "PASSWORD_RESET_COMPLETED",
+      resourceType: "user",
+      resourceId: resetToken.userId,
+      result: "success",
+      ipAddress: meta.ip,
+      userAgent: meta.userAgent,
+    });
   }
 
   async me(userId: string) {

@@ -202,6 +202,10 @@ export class ApiClient {
     login: (body: { email: string; password: string }) =>
       this.request<T.AuthResult>("POST", "/auth/login", body),
     logout: () => this.request<null>("POST", "/auth/logout"),
+    forgotPassword: (email: string) =>
+      this.request<{ message: string }>("POST", "/auth/forgot-password", { email }),
+    resetPassword: (token: string, newPassword: string) =>
+      this.request<null>("POST", "/auth/reset-password", { token, newPassword }),
     switchOrganization: (organizationId: string) =>
       this.request<{ accessToken: string; expiresIn: number }>("POST", "/auth/switch-organization", {
         organizationId,

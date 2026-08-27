@@ -6,6 +6,8 @@ import { RegisterDto } from "./dto/register.dto";
 import { LoginDto } from "./dto/login.dto";
 import { RefreshDto } from "./dto/refresh.dto";
 import { SwitchOrganizationDto } from "./dto/switch-organization.dto";
+import { ForgotPasswordDto } from "./dto/forgot-password.dto";
+import { ResetPasswordDto } from "./dto/reset-password.dto";
 import { Public } from "../common/decorators/public.decorator";
 import { SkipTenantScope } from "../common/decorators/skip-tenant-scope.decorator";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
@@ -68,6 +70,33 @@ export class AuthController {
       platform,
       res,
     );
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post("forgot-password")
+  async forgotPassword(
+    @Body() dto: ForgotPasswordDto,
+    @Ip() ip: string,
+    @Headers("user-agent") userAgent: string | undefined,
+  ) {
+    await this.auth.forgotPassword(dto, { ip, userAgent: userAgent ?? null });
+    // Always the same response regardless of whether the email matched an account — see
+    // AuthService.forgotPassword's comment on why a distinguishable response is an
+    // enumeration oracle.
+    return { success: true, data: { message: "If that email has an account, a reset link has been sent." } };
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post("reset-password")
+  async resetPassword(
+    @Body() dto: ResetPasswordDto,
+    @Ip() ip: string,
+    @Headers("user-agent") userAgent: string | undefined,
+  ) {
+    await this.auth.resetPassword(dto, { ip, userAgent: userAgent ?? null });
+    return { success: true, data: null };
   }
 
   // Logging out must never require an active organization context — a user who belongs to

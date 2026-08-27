@@ -37,8 +37,30 @@ model User {
   createdClients       Client[]              @relation("ClientCreatedBy")
   createdCredentials   Credential[]          @relation("CredentialCreatedBy")
   auditLogs            AuditLog[]
+  passwordResetTokens  PasswordResetToken[]
 
   @@map("users")
+}
+
+// ---------------------------------------------------------------------------
+// Password reset
+// ---------------------------------------------------------------------------
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  // Only a SHA-256 hash of the raw token is ever stored — same reasoning as RefreshToken
+  // (docs/security-design.md §2): the raw token exists only in the single email sent to the
+  // user, never at rest.
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
 }
 
 enum UserStatus {

@@ -194,6 +194,25 @@ fields via the extension exactly as it does via the desktop app, stopping before
   data volume are now verified, not estimated) — see [deployment.md](deployment.md) §6.1.
   Sub-second backup/restore; row counts, a specific known record, and credential ciphertext
   confirmed byte-for-byte identical post-restore; schema fidelity (indexes, tables) confirmed.
+- **Password reset**, previously documented but never actually implemented (no endpoint
+  existed) — now a real end-to-end flow: `POST /auth/forgot-password` / `POST
+  /auth/reset-password`, single-use SHA-256-hashed tokens (raw token never persisted, matching
+  RefreshToken's own design), 30-minute TTL, revokes every session on completion, identical
+  response whether or not the email matches an account (no enumeration oracle). Web UI
+  (`/forgot-password`, `/reset-password`) and a desktop equivalent (delegates the actual reset
+  step to the emailed link, which opens in a real browser either way). 4 new integration tests.
+- **A pluggable outbound-email service** (`infra/email/`), same shape as the KMS and antivirus
+  providers: real interface, a `NoopEmailService` that logs instead of sending and refuses to
+  boot under `NODE_ENV=production`, no real SMTP provider wired yet since none had been chosen —
+  documented as the next piece to add once one is.
+- **Document object storage actually stood up**: the project's MinIO container wasn't running
+  (only Postgres/Redis were) — started it, and `ObjectStorageService` auto-creates its bucket on
+  boot if missing.
+- [production-checklist.md](production-checklist.md) — a concrete, ordered list of exactly what
+  separates this from a real production deploy: what's done, what's a config value away (real
+  secrets, real object storage, a real domain), and what's a genuine decision only the product
+  owner can make (hosting, KMS provider, AV engine, email provider) — each of the latter already
+  has its refuse-to-boot-unsafely guard in place, same pattern as the KMS provider.
 
 **Not yet done — tracked, not silently skipped:**
 - Performance pass on dashboard/search/audit-log queries at realistic data volume (current
