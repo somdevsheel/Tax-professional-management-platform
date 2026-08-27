@@ -15,8 +15,10 @@ against, not an afterthought.
 /apps
   /api        NestJS backend (modular monolith) — implemented (Phases 1–2)
   /web        Next.js web application — implemented (Phase 3, scoped to Phase 1–2 backend)
-  /desktop    Tauri + React Windows desktop app — implemented (Phase 4), compile-verified only —
-              see apps/desktop/README.md
+  /desktop    Tauri + React Windows desktop app — implemented (Phase 4), GST portal login
+              verified live — see apps/desktop/README.md
+  /extension  Browser extension (Manifest V3) — same portal-autofill flow as the desktop app,
+              for the web app — implemented (Phase 5.5), GST verified live — see apps/extension/README.md
 /packages
   /types      Shared TypeScript types/enums (RBAC, DTOs) — source of truth for API contracts
   /api-client Typed API client (token lifecycle, silent refresh) shared by web and, later, desktop
@@ -29,7 +31,7 @@ against, not an afterthought.
 
 See [docs/development-roadmap.md](docs/development-roadmap.md) for what's implemented vs. planned.
 
-## Current Status (Phases 1–5 built)
+## Current Status (Phases 1–5 built, Phase 6 in progress)
 
 **Phase 1 — Foundation:** authentication (Argon2id, RS256 JWT access tokens, rotating refresh
 tokens with reuse detection), multi-tenancy (organization-scoped JWT + guard pipeline), RBAC
@@ -59,26 +61,51 @@ credential storage (the `keyring` crate: Windows Credential Manager/DPAPI, Secre
 Service/libsecret on Linux, Keychain on macOS), client list/detail, and the portal launcher
 wired end to end against the portal-session API: open the portal window → redeem the one-time
 credential token *in Rust only* → fill username/password → hand control to the human for
-CAPTCHA/OTP → report completion. `cargo check`/`build`/`clippy` all pass cleanly against real
-WebKitGTK headers, and the frontend typechecks/builds. **Honest gap:** this sandbox has no
-`sudo` and no Windows, so while the app compiles cleanly and launches, full interactive
-rendering and real portal autofill were never visually verified here — see
-[apps/desktop/README.md](apps/desktop/README.md) for exactly why and what a real Windows (or
-root-accessible Linux) build needs to confirm before this is trusted.
+CAPTCHA/OTP → report completion. **Verified live**, not just compiled: with the user driving a
+real screen, the app ran end to end against the real `services.gst.gov.in` login page —
+username and password filled correctly, CAPTCHA left untouched. That run also caught and fixed
+a real timing bug (the fill script needed to poll for the form to finish rendering, not fire
+once immediately) — see [apps/desktop/README.md](apps/desktop/README.md) for the full story.
 
 **Phase 5 — Additional portals:** all seven seeded portals (GST, Income Tax, TRACES, MCA,
-EPFO, ESIC, DGFT) now have a registry entry in the desktop adapter engine, all but GST as
-plain config (no code) — the "adding a portal is a data change" design actually holds up.
-Selectors are still unverified: a live-fetch pass against each reachable login page found
-TRACES and the Income Tax portal are client-rendered SPAs with no static login form, and
-MCA's login page 403s a non-browser fetch — confirmed by trying, not assumed. New Rust unit
-tests (`cargo test`) cover the fill-script builder, including that a portal password shaped
-like a script-injection attempt stays safely escaped. Manual QA on a real Windows machine
-against each live portal remains the actual gate, same honesty as Phase 4.
+EPFO, ESIC, DGFT) have a registry entry in the desktop adapter engine, all but GST/INCOME_TAX/MCA
+as plain config (no code) — the "adding a portal is a data change" design actually holds up.
+**GST, MCA, and Income Tax are now confirmed against their live portals** (above, and see
+[browser-automation-design.md](docs/browser-automation-design.md) §7 for the fuller stories — MCA
+needed its dead login URL replaced and its selectors hand-verified since it blocks automated
+fetches and dev tools; Income Tax needed real bug-hunting, being a genuine two-screen wizard
+whose username field id turned out to be inconsistent between renders and whose fill script was
+checking "which screen am I on" only once instead of on every poll). Every other portal's
+selectors are still unverified — a live-fetch pass found TRACES also serves a client-rendered SPA
+with no static login form. New Rust unit tests (`cargo test`) cover the fill-script builders,
+including that a portal password shaped like a script-injection attempt stays safely escaped.
 
-Not yet built: documents/tasks/compliance application code, and Postgres RLS as
-defense-in-depth (tracked in docs/development-roadmap.md, deferred to Phase 6 alongside
-a dedicated least-privilege DB role). See [docs/development-roadmap.md](docs/development-roadmap.md).
+**Phase 5.5 — Browser extension** (added mid-Phase-6, user-requested): the web app's "Open
+portal" was originally a plain link — a web page can't script a different tab, so autofill
+there needs the same kind of permission a password manager's browser integration has. Built
+`apps/extension` (Manifest V3), mirroring the desktop app's Rust core almost exactly: the
+extension only redeems the one-time credential and fills the two fields, while the web app's
+own code keeps owning session creation and the CAPTCHA-wait UI. **Verified live** the same way
+as the desktop app — real Chrome, real GST login page, filled correctly.
+
+**Phase 6 — Hardening (in progress):** a full backend security review found and fixed a
+**critical privilege-escalation bug** (a firm admin could grant themselves the platform-only
+`SUPER_ADMIN` role — closed), a **high-severity session-revocation bypass**, and two
+**concurrency races** that defeated refresh-token and portal-session single-use guarantees —
+all with regression tests, including genuine concurrent-request races, proving the fixes hold
+(44/44 backend tests passing). Separately, `pnpm audit` turned up **17 high-severity dependency
+vulnerabilities**; fixed (Next.js upgraded to 15.5.23, transitive deps pinned via overrides) —
+now 0 high/critical, enforced going forward by a new CI pipeline
+(`.github/workflows/ci.yml`). A production Dockerfile for the API was built and actually run
+against real Postgres/Redis (catching three real build bugs along the way), and a real
+backup/DR drill (`pg_dump`/`pg_restore`, byte-for-byte data verified) was executed against the
+local database. Full findings: [docs/security-review.md](docs/security-review.md). Not yet
+done: a dedicated web/desktop security pass, load testing, and Postgres RLS as
+defense-in-depth — see [docs/development-roadmap.md](docs/development-roadmap.md) for the
+complete, honest breakdown.
+
+Not yet built: documents/tasks/compliance application code. See
+[docs/development-roadmap.md](docs/development-roadmap.md).
 
 ## Local Development
 
@@ -147,3 +174,10 @@ This platform handles CA-firm and government-portal credentials. Read
 before touching auth, the credential vault, tenant scoping, or the portal automation engine.
 The product **never** bypasses CAPTCHA/OTP/MFA/rate limits on any portal — see
 [docs/browser-automation-design.md](docs/browser-automation-design.md).
+
+
+
+
+git add .
+git commit -m "add new features"
+git push origin main

@@ -25,13 +25,21 @@ create/events) is a normal authenticated REST call the React frontend makes dire
 
 `portals::adapter_for()` covers every portal in the backend's seed catalog: GST, Income Tax,
 TRACES, MCA, EPFO, ESIC, DGFT. All but GST are plain `PortalConfig` data entries (no code),
-per docs/browser-automation-design.md §7's "adding a portal is a data change" design. **None
-of the selectors are confirmed against a live, rendered page** — TRACES and the Income Tax
-e-filing portal are client-rendered Angular apps with no login form in their static HTML, and
-MCA's login page returns HTTP 403 to a non-browser fetch (both discovered by actually trying,
-not assumed — see the comment above `adapter_for`). Manual QA against each real portal, on a
-real Windows machine, is required before any adapter is trusted — tracked in
-docs/development-roadmap.md, Phase 5, not skipped silently.
+per docs/browser-automation-design.md §7's "adding a portal is a data change" design.
+
+**GST is now verified against the real, live login page** — visually confirmed with a real
+Chrome/WebKitGTK session on a real screen: username and password filled correctly, CAPTCHA
+untouched. This run also caught a real bug: the fill script originally fired immediately after
+`open_portal_window` returned, before the portal's own Angular app had finished rendering the
+form, so the first attempt silently filled nothing. Fixed by polling for the fields (up to
+~10s) instead of a one-shot fill — see `build_fill_script` in `portals/mod.rs`.
+
+Every other portal's selectors remain **unconfirmed against a live, rendered page** — TRACES
+and the Income Tax e-filing portal are client-rendered Angular apps with no login form in
+their static HTML, and MCA's login page returns HTTP 403 to a non-browser fetch (both
+discovered by actually trying, not assumed — see the comment above `adapter_for`). One
+confirmed adapter doesn't extend to the rest; manual QA against each remaining real portal is
+still required before it's trusted — tracked in docs/development-roadmap.md, Phase 5.
 
 ## Testing
 
@@ -74,16 +82,16 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 Then the same `pnpm tauri:dev` / `pnpm tauri:build` as above.
 
-> **Known gap, disclosed rather than hidden:** this app was built and verified in a sandboxed
-> environment with no `sudo` access, so the WebKitGTK dev packages were obtained by
-> downloading `.deb` files directly (`apt-get download`, no root needed) into a local sysroot
-> instead of a real system install. `cargo check` / `cargo build` / `cargo clippy` all pass
-> cleanly against it, and the compiled binary launches, initializes Tauri/GTK, and creates its
-> window without crashing — but WebKitGTK spawns its actual page-rendering process
-> (`WebKitWebProcess`) from a path baked into the library at its own build time, which pointed
-> at the *system's* older, mismatched helper binary rather than the sysroot's matching one,
-> so full interactive rendering was never visually confirmed in that environment. This is an
-> artifact of that specific no-root workaround — it does not occur with a normal
-> `apt install`/root setup, and has no bearing on the real Windows/WebView2 target, which uses
-> an entirely different, evergreen-updated engine with no such version conflict. A real `sudo
-> apt-get install` (command above) or a genuine Windows build does not hit this.
+> **Build environment note, resolved:** this app was built in a sandboxed environment with no
+> `sudo` access, so the WebKitGTK dev packages were obtained by downloading `.deb` files
+> directly (`apt-get download`, no root needed) into a local sysroot instead of a real system
+> install. `cargo check`/`build`/`clippy` pass cleanly against it. Running the compiled binary
+> against the *system's* older WebKitGTK (no `LD_LIBRARY_PATH` override) failed outright —
+> `undefined symbol` — confirming the binary genuinely needs the newer runtime, not just newer
+> headers at build time. Running it against the sysroot's newer runtime produced one cosmetic
+> warning (`WebKitWebProcess` failing to load an injected-bundle extension, from a helper-binary
+> version mismatch baked into the library at its own build time) but **rendered and ran
+> correctly** — that warning turned out to be non-fatal, and the app was confirmed fully
+> interactive end-to-end (login, navigation, and a real portal autofill against live GST) on a
+> real screen with the user driving it directly. This has no bearing on the real Windows/
+> WebView2 target either way, which uses an entirely different engine with no such conflict.

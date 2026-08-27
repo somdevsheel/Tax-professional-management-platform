@@ -78,7 +78,16 @@ const PORTALS: Array<{ code: string; name: string; category: string; baseUrl: st
   { code: "GST", name: "GST Portal", category: "GST", baseUrl: "https://www.gst.gov.in", loginUrl: "https://services.gst.gov.in/services/login" },
   { code: "INCOME_TAX", name: "Income Tax e-Filing", category: "INCOME_TAX", baseUrl: "https://www.incometax.gov.in", loginUrl: "https://eportal.incometax.gov.in/iec/foservices/#/login" },
   { code: "TRACES", name: "TRACES", category: "TDS", baseUrl: "https://www.tdscpc.gov.in", loginUrl: "https://www.tdscpc.gov.in/app/login.xhtml" },
-  { code: "MCA", name: "MCA21", category: "MCA", baseUrl: "https://www.mca.gov.in", loginUrl: "https://www.mca.gov.in/mcafoportal/login.do" },
+  // MCA retired its V2 portal (the old /mcafoportal/login.do path) on 2025-06-18 — every filing
+  // now happens on the V3 portal at mca.gov.in. Two guesses were tried and rejected first:
+  // "/content/mca/global/en/mca-v3.html" renders MCA's own "internal application error" page, and
+  // the bare root domain lands on the homepage with no login form to fill at all. This path is
+  // MCA's actual front-office sign-in page (indexed by Google under the title "FO Login
+  // (mca.gov.in)"), but could not be fetched here to confirm — MCA blocks all non-browser
+  // requests. V3 login is itself email/mobile+OTP or DSC-based, not a static username+password
+  // form — same "unverified until a real login QA pass" caveat as
+  // apps/desktop/src-tauri/src/portals/mod.rs.
+  { code: "MCA", name: "MCA21", category: "MCA", baseUrl: "https://www.mca.gov.in", loginUrl: "https://www.mca.gov.in/content/mca/global/en/foportal/fologin.html" },
   { code: "EPFO", name: "EPFO Employer Portal", category: "OTHER", baseUrl: "https://www.epfindia.gov.in", loginUrl: "https://unifiedportal-emp.epfindia.gov.in/epfo/" },
   { code: "ESIC", name: "ESIC Portal", category: "OTHER", baseUrl: "https://www.esic.gov.in", loginUrl: "https://www.esic.gov.in/employerlogin" },
   { code: "DGFT", name: "DGFT", category: "OTHER", baseUrl: "https://www.dgft.gov.in", loginUrl: "https://www.dgft.gov.in/CP/" },

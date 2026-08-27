@@ -1,12 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ApiError } from "@tax-platform/api-client";
 import type { PortalAccount } from "@tax-platform/api-client";
 import { useCreateCredential, useCredentials, useDeleteCredential, useRotateCredential } from "@/lib/hooks";
 import { formatDateTime } from "@/lib/format";
+import { apiClient, API_BASE_URL } from "@/lib/api";
+import { fillPortalLogin, isExtensionInstalled } from "@/lib/extension-bridge";
 import { ExternalLinkIcon, LockIcon } from "./icons";
 import { RevealCredentialModal } from "./reveal-credential-modal";
+
+type LaunchPhase = "idle" | "launching" | "awaiting_challenge" | "error";
 
 export function PortalAccountCard({ account }: { account: PortalAccount }) {
   const credentials = useCredentials(account.id);
@@ -20,6 +24,15 @@ export function PortalAccountCard({ account }: { account: PortalAccount }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+
+  const [extensionAvailable, setExtensionAvailable] = useState<boolean | null>(null);
+  const [launchPhase, setLaunchPhase] = useState<LaunchPhase>("idle");
+  const [launchError, setLaunchError] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+
+  useEffect(() => {
+    isExtensionInstalled().then(setExtensionAvailable);
+  }, []);
 
   const activeCredential = credentials.data?.find((c) => c.status !== "REVOKED");
 
@@ -47,6 +60,62 @@ export function PortalAccountCard({ account }: { account: PortalAccount }) {
     }
   }
 
+  // Real autofill via the companion browser extension (apps/extension) — the same
+  // open -> redeem-credential-in-a-trusted-context -> fill -> stop-for-CAPTCHA flow the
+  // desktop app runs in Rust, just running in the extension's background service worker
+  // instead. A plain web page cannot do this itself (docs/browser-automation-design.md).
+  async function onOpenPortalViaExtension() {
+    setLaunchError(null);
+    setLaunchPhase("launching");
+    let currentSessionId: string | null = null;
+    try {
+      const session = await apiClient.portalSessions.create(account.clientId, account.id);
+      currentSessionId = session.id;
+      setSessionId(session.id);
+
+      await apiClient.portalSessions.reportEvent(session.id, "navigating_to_login").catch(() => undefined);
+
+      const result = await fillPortalLogin({
+        apiBaseUrl: API_BASE_URL,
+        portalCode: account.portal.code,
+        loginUrl: account.portal.loginUrl,
+        sessionId: session.id,
+        oneTimeToken: session.oneTimeToken,
+      });
+
+      if (!result.ok) {
+        throw new Error(result.error ?? "The extension could not fill this portal's login page.");
+      }
+
+      await apiClient.portalSessions.reportEvent(session.id, "awaiting_user_challenge").catch(() => undefined);
+      setLaunchPhase("awaiting_challenge");
+    } catch (err) {
+      if (currentSessionId) {
+        await apiClient.portalSessions.reportEvent(currentSessionId, "failed").catch(() => undefined);
+      }
+      setLaunchError(err instanceof Error ? err.message : "Could not open this portal.");
+      setLaunchPhase("error");
+    }
+  }
+
+  async function onContinueLogin() {
+    if (sessionId) {
+      await apiClient.portalSessions.reportEvent(sessionId, "completed").catch(() => undefined);
+    }
+    setLaunchPhase("idle");
+    setSessionId(null);
+  }
+
+  async function onCancelLogin() {
+    if (sessionId) {
+      await apiClient.portalSessions.reportEvent(sessionId, "failed").catch(() => undefined);
+    }
+    setLaunchPhase("idle");
+    setSessionId(null);
+  }
+
+  const hasCredential = !!activeCredential;
+
   return (
     <div className="card p-5">
       <div className="flex items-start justify-between">
@@ -54,18 +123,57 @@ export function PortalAccountCard({ account }: { account: PortalAccount }) {
           <h3 className="text-sm font-semibold text-slate-900">{account.portal.name}</h3>
           <p className="text-xs text-slate-500">{account.identifier}</p>
         </div>
-        <a
-          href={account.portal.loginUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="btn-secondary gap-1.5 text-xs"
-        >
-          Open portal <ExternalLinkIcon width={14} height={14} />
-        </a>
+        {extensionAvailable && hasCredential ? (
+          <button
+            className="btn-secondary gap-1.5 text-xs"
+            onClick={onOpenPortalViaExtension}
+            disabled={launchPhase === "launching" || launchPhase === "awaiting_challenge"}
+          >
+            {launchPhase === "launching" ? "Opening…" : "Open portal (autofill)"}
+          </button>
+        ) : (
+          <a
+            href={account.portal.loginUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-secondary gap-1.5 text-xs"
+          >
+            Open portal <ExternalLinkIcon width={14} height={14} />
+          </a>
+        )}
       </div>
       <p className="mt-1 text-[11px] text-slate-400">
-        Autofill happens in the desktop app, which stops before CAPTCHA/OTP for you to complete manually.
+        {extensionAvailable
+          ? "Autofill fills username/password only, then stops for you to complete CAPTCHA/OTP."
+          : "Install the portal-autofill browser extension for one-click autofill — see apps/extension/README.md. Autofill is also available in the desktop app."}
       </p>
+
+      {launchPhase === "awaiting_challenge" && (
+        <div className="challenge-banner mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+          <p className="mb-2">
+            Username and password were sent to the portal tab — if the fields didn't populate
+            automatically (the portal's login page may not have loaded, or its layout changed),
+            enter them manually. Complete any CAPTCHA/OTP/MFA there, then come back and click
+            Continue.
+          </p>
+          <div className="flex gap-2">
+            <button className="btn-primary text-xs" onClick={onContinueLogin}>
+              I&apos;ve completed login, continue
+            </button>
+            <button className="btn-secondary text-xs" onClick={onCancelLogin}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      {launchPhase === "error" && launchError && (
+        <div className="mt-3">
+          <p className="text-xs text-red-600">{launchError}</p>
+          <button className="btn-secondary mt-1 text-xs" onClick={() => setLaunchPhase("idle")}>
+            Dismiss
+          </button>
+        </div>
+      )}
 
       <div className="mt-4 border-t border-slate-100 pt-4">
         <div className="flex items-center justify-between">

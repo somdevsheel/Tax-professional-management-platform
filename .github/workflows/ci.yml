@@ -1,0 +1,157 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  PNPM_VERSION: "9.15.9"
+  NODE_VERSION: "20"
+
+jobs:
+  install:
+    name: Install & cache dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+  typecheck:
+    name: Type check
+    runs-on: ubuntu-latest
+    needs: install
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Generated types must exist before anything that imports @tax-platform/types or the
+      # Prisma client can type-check (docs/development-roadmap.md — same ordering the
+      # Dockerfile and local setup instructions use).
+      - run: pnpm --filter @tax-platform/types build
+      - run: pnpm --filter @tax-platform/api-client build
+      - run: pnpm --filter @tax-platform/api prisma:generate
+      - run: pnpm -r typecheck
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    needs: install
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @tax-platform/api lint
+      - run: pnpm --filter @tax-platform/web lint
+
+  api-tests:
+    name: API unit + integration tests
+    runs-on: ubuntu-latest
+    needs: install
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tax_platform
+          POSTGRES_PASSWORD: tax_platform
+          POSTGRES_DB: tax_platform
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U tax_platform"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://tax_platform:tax_platform@localhost:5432/tax_platform?schema=public
+      REDIS_URL: redis://localhost:6379
+      PASSWORD_PEPPER: ci-test-pepper-not-for-production
+      KEK_LOCAL_DEV_SECRET: ci-test-kek-not-for-production
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @tax-platform/types build
+      - run: pnpm --filter @tax-platform/api exec prisma migrate deploy
+      - run: pnpm --filter @tax-platform/api exec prisma db seed
+      - run: pnpm --filter @tax-platform/api test
+
+  build:
+    name: Build (api, web)
+    runs-on: ubuntu-latest
+    needs: [typecheck, lint]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @tax-platform/types build
+      - run: pnpm --filter @tax-platform/api-client build
+      - run: pnpm --filter @tax-platform/api prisma:generate
+      - run: pnpm --filter @tax-platform/api build
+      - run: pnpm --filter @tax-platform/web build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:4000
+
+  security:
+    name: Security checks
+    runs-on: ubuntu-latest
+    needs: install
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Fails only on high/critical — transitive-dependency low/moderate noise shouldn't block
+      # every merge, but a real high-severity finding in a production dependency should.
+      - run: pnpm audit --prod --audit-level high
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { ApiError } from "@tax-platform/api-client";
 import { useAuth } from "../lib/auth-context";
 
@@ -49,6 +50,9 @@ export function LoginPage() {
             {submitting ? "Signing in…" : "Sign in"}
           </button>
         </form>
+        <p className="muted" style={{ textAlign: "center", marginTop: 16 }}>
+          Setting up a new firm? <Link to="/register">Create one</Link>
+        </p>
       </div>
     </div>
   );

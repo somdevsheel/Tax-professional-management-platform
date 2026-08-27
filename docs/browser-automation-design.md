@@ -130,5 +130,72 @@ stateDiagram-v2
 
 **Status (docs/development-roadmap.md, Phase 5):** all seven seeded portals have a registry
 entry following steps 1–3 as data-only config, GST's being the one dedicated adapter module.
-Step 4 (manual QA on a real login attempt) has not run for any of them — this is the actual
-gate before any of these are trusted, not a formality.
+
+**Step 4 has now actually run for GST** — real manual QA, not a formality skipped. Live-tested
+against the real, rendered `services.gst.gov.in` login page in both automation surfaces this
+project has (the desktop app and the browser extension, §8): username and password were
+filled correctly (verified by direct visual inspection of the running app, not assumed), the
+CAPTCHA field was confirmed untouched, and the engine correctly waited out the portal's own
+Angular render delay before filling — a real timing bug (fixed: both surfaces now poll for the
+fields to exist for up to ~10s instead of a one-shot fill immediately after opening the page,
+since `open_portal_window`/`chrome.tabs.create` resolve once the tab exists, not once the
+portal's own JS has finished rendering the form) that a code read alone would not have caught.
+**MCA is now confirmed too**, live-tested in the desktop app on 2026-08-26 against
+`https://www.mca.gov.in/content/mca/global/en/foportal/fologin.html` (MCA's actual V3 sign-in
+page — its old V2 login was retired 2025-06-18 and the registry's `login_url` was dead until this
+pass). This one took more than a timing fix: MCA blocks automated fetches and runs an
+anti-devtools script on the page, so the field selectors had to be confirmed by reading
+view-source by hand rather than inspected live like GST's, and a one-shot fill wasn't enough — MCA
+server-renders the login `<input>`s, then its own JS (Adobe AEM Adaptive Forms) rebuilds that part
+of the DOM shortly after, silently discarding a fill that landed before the rebuild. Fixed by
+having `build_fill_script` keep re-asserting the values until they've held steady for two
+consecutive polls rather than filling once and stopping — a fix that applies to every portal, not
+just MCA, since any framework that re-renders shortly after initial paint would hit the same race.
+User ID and Password were both confirmed visually filled in the running desktop app; CAPTCHA/OTP
+were left untouched.
+
+**INCOME_TAX is now confirmed too**, live-tested in the desktop app on 2026-08-26 against
+`https://eportal.incometax.gov.in/iec/foservices/#/login` — the hardest of the three. Its login is
+a genuine two-screen wizard (a User ID screen with its own "Continue" button client-side-routes to
+a separate Password screen whose `<input>` doesn't exist until that happens), which meant three
+real, distinct bugs before it actually worked, each found live rather than by code review:
+- The username field's own id was inconsistent between renders (`panAadhaarUserId` in one session,
+  `panAdhaarUserId` — one fewer "a" — in another), so the selector matches both.
+- A visibility guard added to dodge a hidden duplicate element used `offsetParent !== null`, a
+  common but broken check that false-negatives for `position: fixed` elements — switched to
+  `getClientRects().length > 0`.
+- The fill script itself computed "which screen am I on" once at start-up instead of on every
+  poll tick, and separately stopped itself the instant it clicked "Continue" (mistaking the
+  still-filled username field's stability for being fully done) — so it never got a real chance to
+  reach the password field even though its own polling loop kept running (a Tauri `on_page_load`
+  hook to re-inject on navigation was built as a fix first, but live logging showed that event
+  never fires for this portal's hash-only routing, meaning the script's execution context was
+  surviving fine all along — the actual bug was purely in what the running script checked and
+  when). See `apps/desktop/src-tauri/src/portals/income_tax.rs`'s module comment for the full
+  trail; the extension's `fillCredentialFields` in `apps/extension/portals.js` carries the same
+  fixes, using `chrome.webNavigation` to re-inject on each screen instead (a real Chrome tab
+  navigation, unlike the desktop webview here, does reliably need that).
+
+Every other portal in the registry remains an unverified placeholder — three confirmed adapters
+(GST, MCA, INCOME_TAX) is not a blanket claim about the rest (TRACES, EPFO, ESIC, DGFT).
+
+## 8. Browser Extension (Web Autofill)
+
+The desktop app's Rust core can reach into its own isolated WebView2/WebKitGTK window because
+Tauri gives it that control. A web page cannot do the equivalent to a different tab it opens —
+browsers enforce that boundary deliberately, for the same reason a website can't script another
+website's login form. The only way to get real autofill from a *browser* rather than the
+desktop app is the same mechanism every password manager's browser integration uses: a browser
+extension, which the user explicitly grants permission to reach into a page's DOM.
+
+`apps/extension` (Manifest V3, Chrome/Edge) implements exactly the same contract as the
+desktop app, deliberately "dumb" in the same way (docs/desktop-architecture.md §3): the web
+app's own React code owns all business logic — creating the portal session via the normal
+authenticated API, reporting lifecycle events, showing the CAPTCHA-wait UI. The extension's
+background service worker does exactly one thing when asked: redeem a portal-session's
+one-time token for the transient plaintext credential, open the portal tab, and fill the two
+configured fields using the same polling-fill approach as the Rust adapter — then stop. See
+[apps/extension/README.md](../apps/extension/README.md) for the install flow (unpacked/
+developer-mode only, no Chrome Web Store listing) and the exact message protocol between the
+web app and the extension (`chrome.runtime.sendMessage` via `externally_connectable`, scoped
+to a fixed, known extension id — never "any extension that answers").

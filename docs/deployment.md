@@ -86,6 +86,24 @@ release artifact — kept out of the fast web/API feedback loop.
 | RTO target | ≤ 4 hours (documented runbook: restore latest snapshot + replay WAL + redeploy infra from IaC) |
 | Recovery testing | Quarterly restore drill into an isolated environment, verified against a checksum of known test data |
 
+### 6.1 Drill Log
+
+The restore mechanics were actually exercised once against the local dev Postgres (not a
+substitute for the quarterly production-scale drill above, which needs the real cross-region/
+managed-backup infrastructure this environment doesn't have — but proves the `pg_dump`/
+`pg_restore` mechanics and gives a real, not estimated, number for a database this size):
+
+| Run | 2026-08-25, local Docker Postgres 16, ~287 users / 278 orgs / 106 clients / 85 credentials / 904 audit log rows |
+|---|---|
+| Backup (`pg_dump -Fc`) | 0.12s, 297 KB |
+| Restore (`pg_restore` into a fresh database) | 0.22s |
+| Data integrity | Row counts identical across all 5 checked tables; a specific known user record confirmed present and unchanged; every credential's `payload_ciphertext` column confirmed **byte-for-byte identical** (md5 of the concatenated column, ordered by id, matched exactly) — restoring doesn't silently corrupt encrypted data; schema fidelity confirmed (59/59 indexes, 27/27 tables present post-restore) |
+
+At this data volume, backup+restore is sub-second — the RPO/RTO targets above are dominated by
+WAL-shipping cadence and infrastructure redeploy time, not by the dump/restore step itself,
+which will need re-measuring at production data volume as a routine part of each quarterly
+drill.
+
 ## 7. Secrets Management
 
 All runtime secrets (DB credentials, Redis URL, KEK/KMS access, JWT signing key, object

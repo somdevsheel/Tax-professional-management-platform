@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Tax Practice Platform — Portal Autofill",
+  "version": "0.1.0",
+  "description": "Fills your stored username/password into a government/business portal login page, then stops for you to complete CAPTCHA/OTP/MFA yourself. Never touches those fields.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwszh7jLzgjH5Lik19HvLOd9gKdk++93C+n/JdnuZW5Gc/yVZ9UXW0HvskyK+8Wio1z3EVkNZ/jW1MVk9mWfKLd/O9pDkG4/QHBMyC4OMIRnqDga8cPCmpk50W5Xz/bGNFeSKyb74gZGK1Fe32DzQVf6ntZufAebVKFzAOOxJcVAfQ3ww+o3pAbP3Lee+at182syKXlyPrwgoegAanXiF6SgGA3DYVA8pOfWB7ZkWmRwIwFHtp0OeTGF1Ah82F7aVDNe/42qTC3OS/O9YHSFN62HmVGFCZJGcytaQw13kcZmKPR2AWEyX7NRBX2569XXzed5FW46u6G/9R25c07z4RwIDAQAB",
+  "icons": {
+    "128": "icons/icon128.png"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": ["tabs", "scripting", "storage", "webNavigation"],
+  "host_permissions": [
+    "http://localhost/*",
+    "https://services.gst.gov.in/*",
+    "https://www.gst.gov.in/*",
+    "https://eportal.incometax.gov.in/*",
+    "https://*.tdscpc.gov.in/*",
+    "https://www.mca.gov.in/*",
+    "https://*.epfindia.gov.in/*",
+    "https://www.esic.gov.in/*",
+    "https://www.dgft.gov.in/*"
+  ],
+  "externally_connectable": {
+    "matches": ["http://localhost:3101/*", "http://localhost:3000/*"]
+  }
+}
