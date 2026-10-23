@@ -99,6 +99,16 @@ export function fillCredentialFields(usernameSelector, passwordSelector, usernam
     el.dispatchEvent(new Event("change", { bubbles: true }));
   }
 
+  // Real focus()/blur() around the write, the way a user typing would. MCA's AEM form only
+  // commits a value to its own model on focus-out; without it, the portal's Login button reset
+  // the form and wiped the filled credentials (found live 2026-10-23). Used on the
+  // single-screen path only — the multi-screen (INCOME_TAX) path is verified live as is.
+  function commitValue(el, value) {
+    el.focus();
+    setNativeValue(el, value);
+    el.blur();
+  }
+
   function visibleEl(selector) {
     const matches = document.querySelectorAll(selector);
     for (const el of matches) {
@@ -147,8 +157,8 @@ export function fillCredentialFields(usernameSelector, passwordSelector, usernam
             if (userEl.value === username && passEl.value === password) {
               stableTicks++;
             } else {
-              setNativeValue(userEl, username);
-              setNativeValue(passEl, password);
+              commitValue(userEl, username);
+              commitValue(passEl, password);
               stableTicks = 0;
             }
           } else {

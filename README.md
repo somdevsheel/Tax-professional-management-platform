@@ -26,7 +26,7 @@ against, not an afterthought.
   /ui, /validation, /security  — reserved for later phases
 /docs         System design, architecture, security, API, desktop, browser-automation, threat
               model, deployment, roadmap
-/infrastructure  docker-compose.yml (Postgres, Redis, MinIO)
+/infrastructure  docker-compose.yml (Postgres, Redis, SeaweedFS for S3-compatible object storage)
 ```
 
 See [docs/development-roadmap.md](docs/development-roadmap.md) for what's implemented vs. planned.
@@ -117,7 +117,7 @@ Prerequisites: Node 20+, pnpm 9+, Docker.
 ```bash
 pnpm install
 
-# Start Postgres/Redis/MinIO (non-default host ports — see infrastructure/docker-compose.yml
+# Start Postgres/Redis/object storage (non-default host ports — see infrastructure/docker-compose.yml
 # — chosen to avoid clashing with anything else already running on your machine)
 pnpm docker:up
 
@@ -157,7 +157,7 @@ and the Linux-specific WebKitGTK version note if you're developing on Linux).
 cd apps/api
 pnpm typecheck
 pnpm lint
-pnpm test        # unit + integration tests — needs the Postgres, Redis, AND MinIO started above (the API connects to object storage on boot)
+pnpm test        # unit + integration tests — needs the Postgres, Redis, AND object storage started above (the API connects to object storage on boot)
 pnpm build
 
 cd ../web

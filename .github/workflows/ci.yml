@@ -111,18 +111,16 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-      # Not a `services:` entry — service containers can't pass MinIO its required
-      # `server /data` command.
-      - name: Start MinIO
+      # Not a `services:` entry — service containers can't pass the `server -s3` command.
+      # SeaweedFS, matching infrastructure/docker-compose.yml (minio/minio is no longer pullable).
+      - name: Start object storage
         run: |
-          docker run -d --name minio -p 9000:9000 \
-            -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
-            minio/minio:latest server /data
-          for i in $(seq 1 30); do
-            curl -sf http://localhost:9000/minio/health/live && exit 0
+          docker run -d --name object-storage -p 9000:8333 chrislusf/seaweedfs:4.48 server -s3 -dir=/data
+          for i in $(seq 1 60); do
+            curl -sf -o /dev/null http://localhost:9000/ && exit 0
             sleep 1
           done
-          echo "MinIO did not become healthy" >&2; docker logs minio; exit 1
+          echo "Object storage did not become ready" >&2; docker logs object-storage; exit 1
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @tax-platform/types build
       - run: pnpm --filter @tax-platform/api prisma:generate

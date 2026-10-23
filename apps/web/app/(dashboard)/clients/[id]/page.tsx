@@ -6,14 +6,21 @@ import { CLIENT_STATUSES } from "@tax-platform/types";
 import { useClient, usePortalAccounts, useUpdateClient } from "@/lib/hooks";
 import { PortalAccountCard } from "@/components/portal-account-card";
 import { AddPortalAccountForm } from "@/components/add-portal-account-form";
+import { EditClientForm } from "@/components/edit-client-form";
 
-const INFO_FIELDS: Array<{ key: "pan" | "gstin" | "tan" | "cin" | "email" | "phone"; label: string }> = [
+const INFO_FIELDS: Array<{
+  key: "pan" | "gstin" | "tan" | "cin" | "email" | "phone" | "contactPerson" | "financialYear" | "assessmentYear";
+  label: string;
+}> = [
   { key: "pan", label: "PAN" },
   { key: "gstin", label: "GSTIN" },
   { key: "tan", label: "TAN" },
   { key: "cin", label: "CIN" },
   { key: "email", label: "Email" },
   { key: "phone", label: "Phone" },
+  { key: "contactPerson", label: "Contact person" },
+  { key: "financialYear", label: "Financial year" },
+  { key: "assessmentYear", label: "Assessment year" },
 ];
 
 const STATUS_BADGE: Record<string, string> = {
@@ -29,6 +36,7 @@ export default function ClientDetailPage() {
   const portalAccounts = usePortalAccounts(params.id);
   const updateClient = useUpdateClient(params.id);
   const [showAddPortal, setShowAddPortal] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   const client = clientQuery.data;
 
@@ -42,41 +50,58 @@ export default function ClientDetailPage() {
   return (
     <div className="space-y-6">
       <div className="card p-6">
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-xl font-semibold text-slate-900">{client.name}</h1>
-            <p className="text-sm text-slate-500">{client.entityType.replace(/_/g, " ")}</p>
-          </div>
-          <select
-            className={`badge border-0 text-xs ${STATUS_BADGE[client.status]}`}
-            value={client.status}
-            onChange={(e) => updateClient.mutate({ status: e.target.value })}
-          >
-            {CLIENT_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <dl className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3">
-          {INFO_FIELDS.map((f) => (
-            <div key={f.key}>
-              <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">{f.label}</dt>
-              <dd className="mt-0.5 text-sm text-slate-800">{client[f.key] || "—"}</dd>
+        {editing ? (
+          <>
+            <h1 className="mb-5 text-lg font-semibold text-slate-900">Edit client details</h1>
+            <EditClientForm client={client} onDone={() => setEditing(false)} />
+          </>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h1 className="text-xl font-semibold text-slate-900">{client.name}</h1>
+                <p className="text-sm text-slate-500">{client.entityType.replace(/_/g, " ")}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <select
+                  className={`badge border-0 text-xs ${STATUS_BADGE[client.status]}`}
+                  value={client.status}
+                  onChange={(e) => updateClient.mutate({ status: e.target.value })}
+                >
+                  {CLIENT_STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+                <button className="btn-secondary text-xs" onClick={() => setEditing(true)}>
+                  Edit details
+                </button>
+              </div>
             </div>
-          ))}
-        </dl>
 
-        {client.tags.length > 0 && (
-          <div className="mt-4 flex flex-wrap gap-1.5">
-            {client.tags.map((tag) => (
-              <span key={tag} className="badge bg-brand-50 text-brand-700">
-                {tag}
-              </span>
-            ))}
-          </div>
+            <dl className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3">
+              {INFO_FIELDS.map((f) => (
+                <div key={f.key}>
+                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">{f.label}</dt>
+                  <dd className="mt-0.5 break-words text-sm text-slate-800">{client[f.key] || "—"}</dd>
+                </div>
+              ))}
+            </dl>
+
+            {client.tags.length > 0 && (
+              <div className="mt-4 flex flex-wrap gap-1.5">
+                {client.tags.map((tag) => (
+                  <span key={tag} className="badge bg-brand-50 text-brand-700">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {client.notes && <p className="mt-4 whitespace-pre-wrap text-sm text-slate-600">{client.notes}</p>}
+            {updateClient.isError && <p className="mt-3 text-sm text-red-600">Could not update status.</p>}
+          </>
         )}
       </div>
 

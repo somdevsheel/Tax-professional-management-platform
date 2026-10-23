@@ -24,7 +24,7 @@ export function ClientListPage() {
       <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
         <input
           className="input"
-          placeholder="Search name, PAN, GSTIN, TAN, CIN…"
+          placeholder="Search by name, or a full PAN / GSTIN / TAN / CIN…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           style={{ maxWidth: 320, marginBottom: 0 }}

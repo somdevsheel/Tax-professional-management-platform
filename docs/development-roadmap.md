@@ -219,9 +219,12 @@ fields via the extension exactly as it does via the desktop app, stopping before
   response identical to a wrong password (and an `account_locked` audit row is written);
   failures older than the 15-minute window don't count.
 - **CI `api-tests` job fixed**: it had no object storage, and `ObjectStorageService` connects on
-  boot, so every integration suite (not just documents) would fail at app init in CI. MinIO is
-  now started in the job alongside Postgres/Redis, with the `OBJECT_STORAGE_*` env it needs and
+  boot, so every integration suite (not just documents) would fail at app init in CI. Object
+  storage is now started in the job alongside Postgres/Redis, with the `OBJECT_STORAGE_*` env it needs and
   the `prisma generate` step the other jobs already had.
+- **Local object storage switched from MinIO to SeaweedFS** (`chrislusf/seaweedfs:4.48`):
+  `minio/minio` and `quay.io/minio/minio` can no longer be pulled, so `pnpm docker:up` was
+  failing outright. Same S3 API and host port (19010), so no app or `.env` changes were needed.
 - **Web UI pass**: the sidebar was `hidden` below `md` with no replacement, so the app had no
   navigation on phones — added an off-canvas drawer. Data tables now scroll inside their card
   instead of overflowing the page. Shared `.btn`/`.input`/`.card`/`.badge` classes moved into
@@ -230,11 +233,22 @@ fields via the extension exactly as it does via the desktop app, stopping before
   `/reports/summary`; the reports page shows an error/permission message instead of rendering
   blank.
 
+- **Client PII encrypted at rest** ([security-design.md](security-design.md) §5a): PAN, GSTIN,
+  TAN, CIN, address, email, phone, contact person, notes, and client contacts are stored only as
+  AES-256-GCM ciphertext under a per-organization data key (wrapped by the KMS KEK), bound to
+  their row so a copied ciphertext won't decrypt elsewhere. Exact-match PAN/GSTIN/TAN/CIN search
+  via keyed blind indexes. Existing rows are encrypted by an idempotent boot-time backfill. 7 new
+  integration tests (no plaintext in the stored row or ciphertext bytes, search, cross-firm
+  unlinkability, ciphertext-swap rejection, partial updates, contacts, backfill).
+
 **Not yet done — tracked, not silently skipped:**
 - Performance pass on dashboard/search/audit-log queries at realistic data volume (current
   verification is correctness-focused, not load-tested).
 - A dedicated web/desktop security review pass (the backend review was thorough; web/desktop
   were only covered incidentally while building them — see security-review.md §4).
+- Drop the `legacy_*` client/contact columns once every environment has booted on the PII
+  encryption release; organization data-key rotation; encrypting document contents and
+  `portal_accounts.identifier` (see security-design.md §5a "Not covered yet").
 - Postgres Row-Level-Security as defense-in-depth — still needs a dedicated least-privilege
   application DB role to be meaningful, which is a deployment-configuration step.
 - A real staging environment stood up on actual infrastructure (this environment has no cloud

@@ -123,6 +123,47 @@ flowchart TB
   environment/secret-store injection at deploy time — never committed, never in `.env` files
   checked into git (see `.env.example` in the repo root, which contains only placeholder keys).
 
+## 5a. Client PII — Encryption at Rest
+
+Client identifiers and contact details (PAN, GSTIN, TAN, CIN, address, email, phone, contact
+person, notes, and every `client_contacts` row's name/role/email/phone) are stored only as
+ciphertext. A database dump, a read replica, a backup, or SQL access alone reveals none of them.
+
+- **Key hierarchy:** KMS KEK (same as §5) → **one data key per organization**
+  (`organization_data_keys`, stored only wrapped) → two HKDF subkeys, one for encryption and one
+  for blind indexes, so the same bytes are never used for both. A per-organization key rather than
+  §5's per-row key, because client PII is read in bulk (a list page decrypts dozens of rows) and a
+  KMS unwrap per row would put the KMS on every list request. The unwrapped key is cached in
+  process for 10 minutes (`OrganizationKeyService`). One firm's key never decrypts another's data,
+  and deleting a firm's key rows crypto-shreds everything encrypted under them.
+- **Encryption:** AES-256-GCM over one JSON payload per row, random 96-bit nonce, format
+  `version ‖ nonce ‖ ciphertext ‖ tag`. The row's identity (`client:<org>:<client>` /
+  `client-contact:<org>:<client>:<contact>`) is bound as GCM additional data, so a ciphertext
+  copied onto another row or into another tenant **fails to decrypt** (`CLIENT_DATA_INTEGRITY`,
+  500) instead of showing one client's PAN on another client's page.
+- **Search:** PAN/GSTIN/TAN/CIN each have a blind index, HMAC-SHA256 of
+  `field:NORMALIZED_VALUE` under the organization's index key. Search matches a **full**
+  identifier (case and spaces ignored); a fragment of one no longer matches — inherent to not
+  storing the value. Name search is unchanged (names are deliberately plaintext). Blind indexes
+  do reveal, within one organization, which clients share an identifier; across organizations
+  they are unlinkable.
+- **Leak prevention:** every client/contact returned by the API goes through
+  `ClientPiiService.toClientView`/`toContactView`, which strip ciphertext, key ids, blind indexes
+  and legacy columns. Other modules (tasks, documents, compliance, portals) only ever select a
+  client's `id`/`name`.
+- **Migration of existing data:** migration `20261023160000_encrypt_client_pii` renames the old
+  plaintext columns to `legacy_*` (never drops them, so no deploy ordering can lose data).
+  `ClientPiiBackfillService` runs on every boot before the API serves traffic, encrypts any row
+  without a ciphertext and nulls its legacy columns, and **fails the boot** if it can't — serving
+  with rows still in plaintext would show them as blank. A follow-up migration drops `legacy_*`
+  once every environment has booted once on this version.
+- **Backups:** a backup is only restorable together with access to the KMS KEK that wrapped the
+  organization keys — losing the KEK means losing client PII, exactly as for credentials (§5).
+- **Not covered yet:** key rotation for organization keys (rows record `pii_key_id` and keys are
+  versioned, so a rotation can add version 2 and re-encrypt in the background; blind indexes must
+  be recomputed under the new key at the same time), document file contents in object storage,
+  and `portal_accounts.identifier` (often a GSTIN/PAN).
+
 ## 6. Credential Access Model
 
 Reads are never "give me the password" by default. The API distinguishes:

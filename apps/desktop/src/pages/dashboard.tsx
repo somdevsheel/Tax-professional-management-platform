@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
-import { useAuditLog, useClients, useOrganizationMembers } from "../lib/hooks";
+import { useAuditLog, useClients, useOrganizationMembers, useReportsSummary } from "../lib/hooks";
 import { useAuth } from "../lib/auth-context";
+import { formatDateTime } from "../lib/format";
 
 function humanizeAction(action: string): string {
   return action
@@ -15,6 +16,13 @@ export function DashboardPage() {
   const clients = useClients({});
   const members = useOrganizationMembers();
   const activity = useAuditLog();
+  // Requires reports.view — roles without it just don't get the task/filing tiles.
+  const summary = useReportsSummary();
+  const tasks = summary.data?.tasks;
+  const compliance = summary.data?.compliance;
+  const openTasks = tasks
+    ? tasks.total - (tasks.byStatus.COMPLETED ?? 0) - (tasks.byStatus.CANCELLED ?? 0)
+    : undefined;
 
   const recentClients = [...(clients.data?.data ?? [])]
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
@@ -36,10 +44,29 @@ export function DashboardPage() {
           <p className="label">Team members</p>
           <p className="value">{members.data?.length ?? "—"}</p>
         </div>
-        <div className="stat-card">
-          <p className="label">Recent activity</p>
-          <p className="value">{activity.data?.data.length ?? "—"}</p>
-        </div>
+        {tasks && compliance ? (
+          <>
+            <Link to="/tasks" className="stat-card stat-card-link">
+              <p className="label">Open tasks</p>
+              <p className="value">{openTasks ?? "—"}</p>
+              <p className={`hint${tasks.overdueCount > 0 ? " warning" : ""}`}>
+                {tasks.overdueCount > 0 ? `${tasks.overdueCount} overdue` : "none overdue"}
+              </p>
+            </Link>
+            <Link to="/compliance" className="stat-card stat-card-link">
+              <p className="label">Filings due in 30 days</p>
+              <p className="value">{compliance.dueNext30DaysCount}</p>
+              <p className={`hint${compliance.overdueCount > 0 ? " warning" : ""}`}>
+                {compliance.overdueCount > 0 ? `${compliance.overdueCount} overdue` : "none overdue"}
+              </p>
+            </Link>
+          </>
+        ) : (
+          <div className="stat-card">
+            <p className="label">Recent activity</p>
+            <p className="value">{activity.data?.data.length ?? "—"}</p>
+          </div>
+        )}
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
@@ -74,7 +101,7 @@ export function DashboardPage() {
           {(activity.data?.data ?? []).slice(0, 8).map((entry) => (
             <div key={entry.id} className="list-row" style={{ padding: "8px 14px" }}>
               <span>{humanizeAction(entry.action)}</span>
-              <span className="muted">{new Date(entry.createdAt).toLocaleTimeString()}</span>
+              <span className="muted">{formatDateTime(entry.createdAt)}</span>
             </div>
           ))}
         </div>

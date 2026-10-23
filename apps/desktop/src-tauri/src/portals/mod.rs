@@ -50,6 +50,13 @@ pub trait PortalAutomationAdapter: Send + Sync {
     /// rather than leaving a half-typed field; this only ever runs for a few seconds after the
     /// window opens, not indefinitely).
     ///
+    /// `setNativeValue` wraps each write in a real `focus()`/`blur()`, the way a user typing into
+    /// the field would — found live against MCA (2026-10-23): its AEM Adaptive Forms widgets only
+    /// commit a value into the form's own model on focus-out, so a value set without one was
+    /// visible in the input but empty in the model, and clicking the portal's Login button
+    /// reset the form and wiped the "filled" credentials. With the blur, Login proceeds to
+    /// MCA's CAPTCHA step with both fields intact. Harmless for portals that don't need it.
+    ///
     /// `visibleEl` (rather than a plain `document.querySelector`) exists because live testing
     /// against INCOME_TAX (see its adapter module) found a selector can transiently answer with
     /// a hidden element — a dialog/template instance sharing an id with the visible field —
@@ -64,11 +71,13 @@ pub trait PortalAutomationAdapter: Send + Sync {
         format!(
             r#"(function() {{
   function setNativeValue(el, value) {{
+    el.focus();
     const proto = Object.getPrototypeOf(el);
     const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
     if (setter) {{ setter.call(el, value); }} else {{ el.value = value; }}
     el.dispatchEvent(new Event('input', {{ bubbles: true }}));
     el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+    el.blur();
   }}
   function visibleEl(selector) {{
     var matches = document.querySelectorAll(selector);
@@ -261,6 +270,17 @@ mod tests {
         // Confirm the raw password never appears un-escaped (i.e. it was JSON-encoded, so a
         // literal `");` sequence from the input cannot appear verbatim next to unescaped quotes).
         assert!(script.contains(&serde_json::to_string(malicious).unwrap()));
+    }
+
+    #[test]
+    fn fill_script_commits_each_value_with_a_focus_and_blur() {
+        // Without the blur, MCA's AEM form never commits the value to its model and its own
+        // Login button wipes the fields (see build_fill_script's doc comment).
+        let script = adapter_for("MCA").unwrap().build_fill_script("u", "p");
+        let focus = script.find("el.focus();").expect("fill script must focus the field");
+        let set = script.find("setter.call(el, value)").unwrap();
+        let blur = script.find("el.blur();").expect("fill script must blur the field");
+        assert!(focus < set && set < blur);
     }
 
     #[test]

@@ -69,6 +69,13 @@ pub fn open_portal_window(app: AppHandle, state: State<'_, AppState>, portal_cod
     WebviewWindowBuilder::new(&app, PORTAL_WINDOW_LABEL, WebviewUrl::External(url))
         .title(format!("{} — sign in", adapter.config().code))
         .inner_size(1100.0, 800.0)
+        // Fresh, in-memory browser context per portal window (docs/browser-automation-design.md
+        // §6: "each portal session starts a fresh, user-authenticated browser context"). Without
+        // this the window shared the app's persistent data store, so portal cookies/localStorage
+        // (MCA's deviceId cookie and session-timer state, found 2026-10-23) survived restarts and
+        // carried over from one client's portal session into the next. Closing the window now
+        // discards the portal session entirely.
+        .incognito(true)
         .on_page_load(move |window, payload| {
             if !matches!(payload.event(), PageLoadEvent::Finished) {
                 return;

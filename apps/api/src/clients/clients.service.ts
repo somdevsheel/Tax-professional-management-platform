@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import type { ClientStatus, EntityType } from "@tax-platform/types";
 import { PrismaService } from "../infra/prisma/prisma.service";
@@ -9,6 +10,7 @@ import type { CreateClientDto } from "./dto/create-client.dto";
 import type { UpdateClientDto } from "./dto/update-client.dto";
 import type { CreateContactDto } from "./dto/create-contact.dto";
 import type { AssignClientDto } from "./dto/assign-client.dto";
+import { CLIENT_PII_FIELDS, ClientPiiService, type ClientPii } from "./client-pii.service";
 
 export interface ClientListFilters {
   status?: ClientStatus;
@@ -29,6 +31,7 @@ export class ClientsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly pii: ClientPiiService,
   ) {}
 
   async list(organizationId: string, filters: ClientListFilters) {
@@ -42,14 +45,14 @@ export class ClientsService {
       ...(filters.assignedTo
         ? { assignments: { some: { organizationMemberId: filters.assignedTo, unassignedAt: null } } }
         : {}),
+      // Identifiers are encrypted (docs/security-design.md §5a), so they match by blind index:
+      // a full PAN/GSTIN/TAN/CIN finds its client, a fragment of one doesn't. Name stays a
+      // case-insensitive substring match.
       ...(filters.search
         ? {
             OR: [
               { name: { contains: filters.search, mode: "insensitive" as const } },
-              { pan: { contains: filters.search, mode: "insensitive" as const } },
-              { gstin: { contains: filters.search, mode: "insensitive" as const } },
-              { tan: { contains: filters.search, mode: "insensitive" as const } },
-              { cin: { contains: filters.search, mode: "insensitive" as const } },
+              ...(await this.pii.searchIndexes(organizationId, filters.search)),
             ],
           }
         : {}),
@@ -77,7 +80,12 @@ export class ClientsService {
 
     const hasMore = clients.length > limit;
     const page = hasMore ? clients.slice(0, limit) : clients;
-    return { data: page, nextCursor: hasMore ? page[page.length - 1].id : null, hasMore, total };
+    return {
+      data: await Promise.all(page.map((c) => this.pii.toClientView(c))),
+      nextCursor: hasMore ? page[page.length - 1].id : null,
+      hasMore,
+      total,
+    };
   }
 
   async get(organizationId: string, clientId: string) {
@@ -92,12 +100,26 @@ export class ClientsService {
     if (!client) {
       throw AppError.notFound("CLIENT_NOT_FOUND", "Client was not found");
     }
-    return client;
+    const { contacts, ...rest } = client;
+    return {
+      ...(await this.pii.toClientView(rest)),
+      contacts: await Promise.all(contacts.map((c) => this.pii.toContactView(organizationId, c))),
+    };
   }
 
   async create(organizationId: string, dto: CreateClientDto, actorId: string, meta: RequestMeta) {
+    // The id is chosen here rather than by the database because the PII ciphertext is bound to
+    // it (as GCM additional data) and must be computed before the row exists.
+    const id = randomUUID();
+    const { pii, rest } = splitPii(dto);
     const client = await this.prisma.client.create({
-      data: { organizationId, createdById: actorId, ...dto } as Prisma.ClientUncheckedCreateInput,
+      data: {
+        id,
+        organizationId,
+        createdById: actorId,
+        ...rest,
+        ...(await this.pii.encryptClient(organizationId, id, { ...EMPTY_PII, ...pii })),
+      } as Prisma.ClientUncheckedCreateInput,
     });
 
     await this.audit.log({
@@ -111,7 +133,7 @@ export class ClientsService {
       userAgent: meta.userAgent,
     });
 
-    return client;
+    return this.pii.toClientView(client);
   }
 
   async update(
@@ -121,10 +143,17 @@ export class ClientsService {
     actorId: string,
     meta: RequestMeta,
   ) {
-    await this.requireClient(organizationId, clientId);
+    const existing = await this.requireClient(organizationId, clientId);
+    const { pii, rest } = splitPii(dto);
+    // PII is one ciphertext, so a partial update decrypts, merges the changed fields (undefined =
+    // unchanged, null = cleared), and re-encrypts the whole payload under a fresh nonce.
+    const piiColumns =
+      Object.keys(pii).length > 0
+        ? await this.pii.encryptClient(organizationId, clientId, { ...(await this.pii.decryptClient(existing)), ...pii })
+        : {};
     const updated = await this.prisma.client.update({
       where: { id: clientId },
-      data: dto as Prisma.ClientUpdateInput,
+      data: { ...rest, ...piiColumns } as Prisma.ClientUpdateInput,
     });
 
     await this.audit.log({
@@ -138,7 +167,7 @@ export class ClientsService {
       userAgent: meta.userAgent,
     });
 
-    return updated;
+    return this.pii.toClientView(updated);
   }
 
   async remove(organizationId: string, clientId: string, actorId: string, meta: RequestMeta) {
@@ -159,12 +188,27 @@ export class ClientsService {
 
   async addContact(organizationId: string, clientId: string, dto: CreateContactDto) {
     await this.requireClient(organizationId, clientId);
-    return this.prisma.clientContact.create({ data: { clientId, ...dto } });
+    const id = randomUUID();
+    const contact = await this.prisma.clientContact.create({
+      data: {
+        id,
+        clientId,
+        isPrimary: dto.isPrimary ?? false,
+        ...(await this.pii.encryptContact(organizationId, clientId, id, {
+          name: dto.name,
+          role: dto.role ?? null,
+          email: dto.email ?? null,
+          phone: dto.phone ?? null,
+        })),
+      },
+    });
+    return this.pii.toContactView(organizationId, contact);
   }
 
   async listContacts(organizationId: string, clientId: string) {
     await this.requireClient(organizationId, clientId);
-    return this.prisma.clientContact.findMany({ where: { clientId } });
+    const contacts = await this.prisma.clientContact.findMany({ where: { clientId } });
+    return Promise.all(contacts.map((c) => this.pii.toContactView(organizationId, c)));
   }
 
   async assign(organizationId: string, clientId: string, dto: AssignClientDto, actorId: string, meta: RequestMeta) {
@@ -237,4 +281,20 @@ export class ClientsService {
     }
     return client;
   }
+}
+
+const EMPTY_PII: ClientPii = Object.fromEntries(CLIENT_PII_FIELDS.map((f) => [f, null])) as ClientPii;
+
+/** Separates a create/update DTO into its encrypted PII fields and its plain columns. */
+function splitPii<T extends Partial<CreateClientDto>>(dto: T) {
+  const pii: Partial<ClientPii> = {};
+  const rest: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(dto)) {
+    if ((CLIENT_PII_FIELDS as readonly string[]).includes(key)) {
+      if (value !== undefined) (pii as Record<string, unknown>)[key] = value;
+    } else {
+      rest[key] = value;
+    }
+  }
+  return { pii, rest };
 }

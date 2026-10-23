@@ -119,7 +119,10 @@ export interface CreateClientInput {
   tags?: string[];
 }
 
-export type UpdateClientInput = Partial<CreateClientInput>;
+/** `null` clears an optional field; `name`/`entityType` can be changed but never cleared. */
+export type UpdateClientInput = {
+  [K in keyof CreateClientInput]?: K extends "name" | "entityType" | "tags" ? CreateClientInput[K] : CreateClientInput[K] | null;
+};
 
 export interface ClientContact {
   id: string;

@@ -77,6 +77,49 @@ describe("Clients & Credentials (integration)", () => {
       expect(logs[0].resourceId).toBe(res.body.data.id);
     });
 
+    it("updates client details, clears a field with null, and audits CLIENT_UPDATED", async () => {
+      const firm = await registerFirm();
+      const created = await request(app.getHttpServer())
+        .post("/api/v1/clients")
+        .set("Authorization", `Bearer ${firm.accessToken}`)
+        .send({ name: "Old Name LLP", entityType: "LLP", pan: "AAAPL1234C", email: "old@example.test" });
+      const clientId = created.body.data.id as string;
+
+      const res = await request(app.getHttpServer())
+        .patch(`/api/v1/clients/${clientId}`)
+        .set("Authorization", `Bearer ${firm.accessToken}`)
+        .send({ name: "New Name Pvt Ltd", entityType: "PRIVATE_LIMITED", email: null, contactPerson: "R. Mehta", tags: ["gst"] });
+      expect(res.status).toBe(200);
+      expect(res.body.data).toMatchObject({
+        name: "New Name Pvt Ltd",
+        entityType: "PRIVATE_LIMITED",
+        pan: "AAAPL1234C",
+        email: null,
+        contactPerson: "R. Mehta",
+        tags: ["gst"],
+      });
+
+      const audit = await prisma.auditLog.findFirst({ where: { resourceId: clientId, action: "CLIENT_UPDATED" } });
+      expect(audit).not.toBeNull();
+    });
+
+    it("rejects clearing a required field with a 400 instead of failing in the database", async () => {
+      const firm = await registerFirm();
+      const created = await request(app.getHttpServer())
+        .post("/api/v1/clients")
+        .set("Authorization", `Bearer ${firm.accessToken}`)
+        .send({ name: "Keep Me", entityType: "INDIVIDUAL" });
+      const clientId = created.body.data.id as string;
+
+      for (const body of [{ name: null }, { entityType: null }]) {
+        const res = await request(app.getHttpServer())
+          .patch(`/api/v1/clients/${clientId}`)
+          .set("Authorization", `Bearer ${firm.accessToken}`)
+          .send(body);
+        expect(res.status).toBe(400);
+      }
+    });
+
     it("never returns another organization's client, even by guessing a valid client id", async () => {
       const orgA = await registerFirm();
       const orgB = await registerFirm();

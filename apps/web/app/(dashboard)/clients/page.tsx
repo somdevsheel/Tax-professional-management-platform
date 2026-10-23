@@ -26,7 +26,7 @@ export default function ClientsPage() {
       <div className="flex flex-wrap gap-3">
         <input
           className="input max-w-xs"
-          placeholder="Search name, PAN, GSTIN, TAN, CIN…"
+          placeholder="Search by name, or a full PAN / GSTIN / TAN / CIN…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
