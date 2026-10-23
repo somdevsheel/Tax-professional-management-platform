@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../lib/auth-context";
+import { NotificationBell } from "./notification-bell";
 
 const NAV = [
   { to: "/dashboard", label: "Dashboard" },
@@ -33,6 +34,7 @@ export function Shell({ children }: { children: ReactNode }) {
     <div className="app-shell">
       <aside className="sidebar" style={{ display: "flex", flexDirection: "column" }}>
         <h1>Tax Practice Platform</h1>
+        <NotificationBell />
         {NAV.map((item) => (
           <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? "active" : "")}>
             {item.label}

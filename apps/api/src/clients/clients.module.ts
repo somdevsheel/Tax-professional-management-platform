@@ -9,6 +9,6 @@ import { ClientPiiBackfillService } from "./client-pii-backfill.service";
   imports: [AuditModule],
   controllers: [ClientsController],
   providers: [ClientsService, ClientPiiService, ClientPiiBackfillService],
-  exports: [ClientsService],
+  exports: [ClientsService, ClientPiiService],
 })
 export class ClientsModule {}

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { MenuIcon } from "./icons";
+import { NotificationBell } from "./notification-bell";
 
 export function Topbar({ onOpenNav }: { onOpenNav: () => void }) {
   const { user, organizationId, memberships, logout, switchOrganization } = useAuth();
@@ -61,7 +62,8 @@ export function Topbar({ onOpenNav }: { onOpenNav: () => void }) {
         )}
       </div>
 
-      <div className="flex shrink-0 items-center gap-4">
+      <div className="flex shrink-0 items-center gap-3 sm:gap-4">
+        {organizationId && <NotificationBell />}
         <span className="hidden text-sm text-slate-500 sm:inline">{user?.fullName}</span>
         <button onClick={onLogout} className="btn-secondary text-xs">
           Sign out

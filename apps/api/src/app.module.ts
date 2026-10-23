@@ -8,6 +8,7 @@ import { PrismaModule } from "./infra/prisma/prisma.module";
 import { JwtKeysModule } from "./infra/jwt-keys/jwt-keys.module";
 import { KmsModule } from "./infra/kms/kms.module";
 import { DataProtectionModule } from "./data-protection/data-protection.module";
+import { NotificationsModule } from "./notifications/notifications.module";
 import { ObjectStorageModule } from "./infra/object-storage/object-storage.module";
 import { AntivirusModule } from "./infra/antivirus/antivirus.module";
 import { EmailModule } from "./infra/email/email.module";
@@ -84,6 +85,7 @@ const REDACT_PATHS = [
     PortalSessionsModule,
     TasksModule,
     ComplianceModule,
+    NotificationsModule,
     DocumentsModule,
     ReportsModule,
     HealthModule,

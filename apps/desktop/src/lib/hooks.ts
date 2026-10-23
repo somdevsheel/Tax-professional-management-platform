@@ -342,3 +342,79 @@ export function useReportsSummary() {
     enabled: !!organizationId,
   });
 }
+
+// ---- Compliance calendar ----
+export function useClientComplianceItems(clientId: string) {
+  const { organizationId } = useAuth();
+  return useQuery({
+    queryKey: ["client-compliance", organizationId, clientId],
+    queryFn: () => apiClient.compliance.listForClient(clientId),
+    enabled: !!organizationId,
+  });
+}
+
+export function useCompliancePlan(clientId: string, financialYear: string) {
+  const { organizationId } = useAuth();
+  return useQuery({
+    queryKey: ["compliance-plan", organizationId, clientId, financialYear],
+    queryFn: () => apiClient.compliance.plan(clientId, financialYear),
+    enabled: !!organizationId,
+  });
+}
+
+function invalidateCompliance(qc: ReturnType<typeof useQueryClient>) {
+  for (const key of ["compliance-items", "client-compliance", "compliance-plan", "reports-summary"]) {
+    qc.invalidateQueries({ queryKey: [key] });
+  }
+}
+
+export function useGenerateCalendar(clientId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Parameters<typeof apiClient.compliance.generate>[1]) => apiClient.compliance.generate(clientId, body),
+    onSuccess: () => invalidateCompliance(qc),
+  });
+}
+
+export function useGenerateCalendarForAll() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: apiClient.compliance.generateForAllClients,
+    onSuccess: () => invalidateCompliance(qc),
+  });
+}
+
+// ---- Notifications ----
+export function useUnreadNotificationCount() {
+  const { organizationId } = useAuth();
+  return useQuery({
+    queryKey: ["notifications-unread", organizationId],
+    queryFn: apiClient.notifications.unreadCount,
+    enabled: !!organizationId,
+    refetchInterval: 60_000,
+  });
+}
+
+export function useNotifications(enabled: boolean) {
+  const { organizationId } = useAuth();
+  return useQuery({
+    queryKey: ["notifications", organizationId],
+    queryFn: () => apiClient.notifications.list({ limit: 30 }),
+    enabled: !!organizationId && enabled,
+  });
+}
+
+function invalidateNotifications(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ["notifications"] });
+  qc.invalidateQueries({ queryKey: ["notifications-unread"] });
+}
+
+export function useMarkNotificationRead() {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: apiClient.notifications.markRead, onSuccess: () => invalidateNotifications(qc) });
+}
+
+export function useMarkAllNotificationsRead() {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: apiClient.notifications.markAllRead, onSuccess: () => invalidateNotifications(qc) });
+}

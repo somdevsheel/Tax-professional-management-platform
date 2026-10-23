@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Headers, Ip, Param, Patch, Post, Query } from "@nestjs/common";
 import { ComplianceService } from "./compliance.service";
 import { CreateComplianceItemDto } from "./dto/create-compliance-item.dto";
+import { GenerateCalendarDto, GenerateCalendarForAllDto } from "./dto/generate-calendar.dto";
 import { UpdateComplianceItemDto } from "./dto/update-compliance-item.dto";
 import { ListComplianceItemsQuery } from "./dto/list-compliance-items.query";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
@@ -85,5 +86,42 @@ export class ComplianceController {
       userAgent: userAgent ?? null,
     });
     return { success: true, data: item };
+  }
+
+  @Get("clients/:id/compliance-plan")
+  @RequirePermission("compliance.view")
+  async plan(@CurrentUser() auth: AuthContext, @Param("id") clientId: string, @Query("financialYear") financialYear: string) {
+    return { success: true, data: await this.compliance.plan(auth.organizationId!, clientId, financialYear ?? "") };
+  }
+
+  @Post("clients/:id/compliance-items/generate")
+  @RequirePermission("compliance.manage")
+  async generate(
+    @CurrentUser() auth: AuthContext,
+    @Param("id") clientId: string,
+    @Body() dto: GenerateCalendarDto,
+    @Ip() ip: string,
+    @Headers("user-agent") userAgent: string | undefined,
+  ) {
+    const result = await this.compliance.generate(auth.organizationId!, clientId, dto, auth.userId, {
+      ip,
+      userAgent: userAgent ?? null,
+    });
+    return { success: true, data: result };
+  }
+
+  @Post("compliance-items/generate-all")
+  @RequirePermission("compliance.manage")
+  async generateForAll(
+    @CurrentUser() auth: AuthContext,
+    @Body() dto: GenerateCalendarForAllDto,
+    @Ip() ip: string,
+    @Headers("user-agent") userAgent: string | undefined,
+  ) {
+    const result = await this.compliance.generateForAllClients(auth.organizationId!, dto, auth.userId, {
+      ip,
+      userAgent: userAgent ?? null,
+    });
+    return { success: true, data: result };
   }
 }

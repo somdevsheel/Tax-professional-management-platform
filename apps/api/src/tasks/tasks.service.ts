@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import type { TaskPriority, TaskStatus } from "@tax-platform/types";
 import { PrismaService } from "../infra/prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
+import { NotificationsService } from "../notifications/notifications.service";
 import { AppError } from "../common/errors/app-error";
 import type { RequestMeta } from "../auth/auth.service";
 import type { CreateTaskDto } from "./dto/create-task.dto";
@@ -33,6 +34,7 @@ export class TasksService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async list(organizationId: string, filters: TaskListFilters) {
@@ -133,6 +135,8 @@ export class TasksService {
       userAgent: meta.userAgent,
     });
 
+    if (task.assignedTo) await this.notifyAssignee(organizationId, task, actorId);
+
     return task;
   }
 
@@ -187,6 +191,8 @@ export class TasksService {
       metadata: { assignedTo: dto.assignedTo ?? null },
     });
 
+    if (updated.assignedTo) await this.notifyAssignee(organizationId, updated, actorId);
+
     return updated;
   }
 
@@ -232,6 +238,31 @@ export class TasksService {
   async addComment(organizationId: string, taskId: string, dto: CreateTaskCommentDto, actorId: string) {
     await this.requireTask(organizationId, taskId);
     return this.prisma.taskComment.create({ data: { taskId, authorId: actorId, body: dto.body } });
+  }
+
+  /** Tells the assignee a task is now theirs — unless they assigned it to themselves. */
+  private async notifyAssignee(
+    organizationId: string,
+    task: { id: string; title: string; assignedTo: string | null },
+    actorId: string,
+  ) {
+    const member = await this.prisma.organizationMember.findFirst({
+      where: { id: task.assignedTo!, organizationId, status: "ACTIVE" },
+      select: { userId: true },
+    });
+    if (!member || member.userId === actorId) return;
+    const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { fullName: true } });
+    await this.notifications.notify([
+      {
+        organizationId,
+        userId: member.userId,
+        type: "TASK_ASSIGNED",
+        title: `New task: ${task.title}`,
+        body: `Assigned to you by ${actor?.fullName ?? "a teammate"}`,
+        relatedEntityType: "task",
+        relatedEntityId: task.id,
+      },
+    ]);
   }
 
   private async requireTask(organizationId: string, taskId: string) {

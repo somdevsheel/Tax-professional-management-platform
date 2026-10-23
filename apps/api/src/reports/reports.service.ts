@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../infra/prisma/prisma.service";
+import { addDays, startOfTodayIst } from "../common/dates";
 
 /**
  * Read-only aggregation over Clients/Tasks/Compliance/Documents — deliberately has no data
@@ -12,8 +13,10 @@ export class ReportsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async summary(organizationId: string) {
-    const now = new Date();
-    const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    // Due dates are calendar days: "overdue" means due before today in India, not before this
+    // instant (src/common/dates.ts explains why comparing to `new Date()` was off by a day).
+    const today = startOfTodayIst();
+    const in30Days = addDays(today, 30);
 
     const [
       clientTotal,
@@ -42,7 +45,7 @@ export class ReportsService {
         where: {
           organizationId,
           deletedAt: null,
-          dueDate: { lt: now },
+          dueDate: { lt: today },
           status: { notIn: ["COMPLETED", "CANCELLED"] },
         },
       }),
@@ -51,14 +54,14 @@ export class ReportsService {
       this.prisma.complianceItem.count({
         where: {
           organizationId,
-          dueDate: { lt: now },
+          dueDate: { lt: today },
           status: { notIn: ["FILED", "VERIFIED", "NOT_APPLICABLE"] },
         },
       }),
       this.prisma.complianceItem.count({
         where: {
           organizationId,
-          dueDate: { gte: now, lte: in30Days },
+          dueDate: { gte: today, lte: in30Days },
           status: { notIn: ["FILED", "VERIFIED", "NOT_APPLICABLE"] },
         },
       }),

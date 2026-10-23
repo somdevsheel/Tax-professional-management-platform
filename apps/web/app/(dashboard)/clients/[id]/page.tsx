@@ -7,6 +7,7 @@ import { useClient, usePortalAccounts, useUpdateClient } from "@/lib/hooks";
 import { PortalAccountCard } from "@/components/portal-account-card";
 import { AddPortalAccountForm } from "@/components/add-portal-account-form";
 import { EditClientForm } from "@/components/edit-client-form";
+import { ComplianceCalendarCard } from "@/components/compliance-calendar-card";
 
 const INFO_FIELDS: Array<{
   key: "pan" | "gstin" | "tan" | "cin" | "email" | "phone" | "contactPerson" | "financialYear" | "assessmentYear";
@@ -136,6 +137,8 @@ export default function ClientDetailPage() {
           )}
         </div>
       </div>
+
+      <ComplianceCalendarCard clientId={params.id} />
 
       {client.assignments.length > 0 && (
         <div>

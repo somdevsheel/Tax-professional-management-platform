@@ -566,6 +566,10 @@ model ComplianceItem {
   complianceTypeId String           @map("compliance_type_id")
   financialYear    String           @map("financial_year")
   assessmentYear   String?          @map("assessment_year")
+  // Which filing period within the financial year this item covers — "2025-04" (monthly), "Q1"
+  // (quarterly) or "ANNUAL". Set for calendar-generated items, so generating the same year twice
+  // is a no-op; null for items added by hand.
+  period           String?
   dueDate          DateTime         @map("due_date")
   filingDate       DateTime?        @map("filing_date")
   status           ComplianceStatus @default(UPCOMING)
@@ -577,6 +581,7 @@ model ComplianceItem {
   client         Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
   complianceType ComplianceType @relation(fields: [complianceTypeId], references: [id])
 
+  @@unique([organizationId, clientId, complianceTypeId, financialYear, period])
   @@index([organizationId, status, dueDate])
   @@map("compliance_items")
 }
@@ -606,6 +611,9 @@ model Notification {
   channel           String
   readAt            DateTime? @map("read_at")
   sentAt            DateTime? @map("sent_at")
+  // Identifies "this reminder, for this item, to this person" so the deadline sweep can run any
+  // number of times without sending the same reminder twice.
+  dedupeKey         String?   @unique @map("dedupe_key")
   createdAt         DateTime  @default(now()) @map("created_at")
 
   @@index([organizationId, userId, readAt])

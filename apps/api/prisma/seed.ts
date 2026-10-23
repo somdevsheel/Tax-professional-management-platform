@@ -7,7 +7,9 @@
  * — kept as literals here rather than imported, so this script has no build-order dependency
  * on the shared package. Keep the two in sync when the permission catalog changes.
  */
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
+// A pure module (no Nest/DB imports), so importing it keeps this script dependency-free.
+import { DEFAULT_DUE_RULES } from "../src/compliance/due-rules";
 
 const prisma = new PrismaClient();
 
@@ -157,13 +159,14 @@ async function main() {
       where: { organizationId: null, code: type.code },
       select: { id: true },
     });
+    const defaultDueRule = DEFAULT_DUE_RULES[type.code] as Prisma.InputJsonValue | undefined;
     if (existing) {
       await prisma.complianceType.update({
         where: { id: existing.id },
-        data: { name: type.name, category: type.category, periodicity: type.periodicity },
+        data: { name: type.name, category: type.category, periodicity: type.periodicity, defaultDueRule },
       });
     } else {
-      await prisma.complianceType.create({ data: { ...type, organizationId: null } });
+      await prisma.complianceType.create({ data: { ...type, organizationId: null, defaultDueRule } });
     }
   }
 

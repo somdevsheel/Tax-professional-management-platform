@@ -241,6 +241,22 @@ fields via the extension exactly as it does via the desktop app, stopping before
   integration tests (no plaintext in the stored row or ciphertext bytes, search, cross-firm
   unlinkability, ciphertext-swap rejection, partial updates, contacts, backfill).
 
+- **Compliance calendar + deadline reminders.** Every seeded filing type now carries its
+  statutory due-date rule (GSTR-1 11th / GSTR-3B 20th / PF & ESI 15th of the next month; TDS
+  31 Jul, 31 Oct, 31 Jan, 31 May; advance tax 15 Jun, 15 Sep, 15 Dec, 15 Mar; ITR 31 Jul;
+  GSTR-9 31 Dec; AOC-4 30 Oct; MGT-7 29 Nov). A client's year is generated in one action —
+  suggested from what's on file (GSTIN → GST, TAN → TDS, company → ROC) — or for every active
+  client at once; re-running is a no-op (unique on client/type/FY/period). A deadline sweep
+  (`DEADLINE_SWEEP_INTERVAL_MINUTES`, default hourly) marks past-due filings OVERDUE and sends
+  in-app reminders 7/3/1/0 days ahead and once when overdue — to the assignee, or to everyone
+  with `compliance.manage` if unassigned — plus task-assigned and task-due reminders. Notification
+  bell in web and desktop. Also fixed: due dates were compared against the current instant, so a
+  filing showed as overdue from 05:30 IST *on its own due date* (reports, dashboard, compliance
+  page); "today" is now the IST calendar day. 15 new tests.
+- Still to do on reminders: email delivery (the in-app path is built; it needs the email provider
+  decision in production-checklist.md), per-user notification preferences, and due-date variants
+  this catalog doesn't model (QRMP GSTR-3B 22nd/24th, ITR 31 Oct for audit cases).
+
 **Not yet done — tracked, not silently skipped:**
 - Performance pass on dashboard/search/audit-log queries at realistic data volume (current
   verification is correctness-focused, not load-tested).

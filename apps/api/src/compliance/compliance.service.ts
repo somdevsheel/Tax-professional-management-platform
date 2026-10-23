@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import type { ComplianceStatus } from "@tax-platform/types";
 import { PrismaService } from "../infra/prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
@@ -7,6 +7,10 @@ import { AppError } from "../common/errors/app-error";
 import type { RequestMeta } from "../auth/auth.service";
 import type { CreateComplianceItemDto } from "./dto/create-compliance-item.dto";
 import type { UpdateComplianceItemDto } from "./dto/update-compliance-item.dto";
+import type { GenerateCalendarDto, GenerateCalendarForAllDto } from "./dto/generate-calendar.dto";
+import { ClientPiiService } from "../clients/client-pii.service";
+import { startOfTodayIst } from "../common/dates";
+import { assessmentYearFor, expandRule, parseFinancialYear, suggestedTypeCodes, type DueRule } from "./due-rules";
 
 export interface ComplianceItemListFilters {
   status?: ComplianceStatus;
@@ -29,6 +33,7 @@ export class ComplianceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly clientPii: ClientPiiService,
   ) {}
 
   async listCatalog() {
@@ -185,6 +190,159 @@ export class ComplianceService {
       ipAddress: meta.ip,
       userAgent: meta.userAgent,
     });
+  }
+
+  /**
+   * What a client's compliance calendar for one financial year would contain: every catalog type
+   * that has a due-date rule, whether it's suggested for this client (and why), and how many of
+   * its filings are already tracked — the data behind the "generate calendar" picker.
+   */
+  async plan(organizationId: string, clientId: string, financialYear: string) {
+    this.requireFinancialYear(financialYear);
+    const client = await this.loadClientForSuggestions(organizationId, clientId);
+    const suggestions = suggestedTypeCodes(client);
+    const types = await this.calendarTypes(organizationId);
+    const tracked = await this.prisma.complianceItem.groupBy({
+      by: ["complianceTypeId"],
+      where: { organizationId, clientId, financialYear },
+      _count: true,
+    });
+    const trackedByType = new Map(tracked.map((t) => [t.complianceTypeId, t._count]));
+
+    return types.map((type) => ({
+      complianceType: type,
+      suggested: suggestions.has(type.code),
+      reason: suggestions.get(type.code) ?? null,
+      periods: expandRule(type.defaultDueRule as DueRule, financialYear).length,
+      tracked: trackedByType.get(type.id) ?? 0,
+    }));
+  }
+
+  /** Creates a client's filings for a financial year from the catalog's due-date rules.
+   *  Idempotent: filings already tracked for the same type/year/period are skipped. */
+  async generate(organizationId: string, clientId: string, dto: GenerateCalendarDto, actorId: string, meta: RequestMeta) {
+    this.requireFinancialYear(dto.financialYear);
+    await this.requireClient(organizationId, clientId);
+    const types = (await this.calendarTypes(organizationId)).filter((t) => dto.complianceTypeIds.includes(t.id));
+    if (types.length !== new Set(dto.complianceTypeIds).size) {
+      throw AppError.notFound("COMPLIANCE_TYPE_NOT_FOUND", "One or more compliance types don't exist or have no due-date rule");
+    }
+
+    const result = await this.createCalendarItems(organizationId, clientId, types, dto.financialYear, dto.includePastDue ?? false);
+    await this.audit.log({
+      organizationId,
+      actorUserId: actorId,
+      action: "COMPLIANCE_CALENDAR_GENERATED",
+      resourceType: "client",
+      resourceId: clientId,
+      result: "success",
+      ipAddress: meta.ip,
+      userAgent: meta.userAgent,
+      metadata: { financialYear: dto.financialYear, complianceTypeIds: dto.complianceTypeIds, ...result },
+    });
+    return result;
+  }
+
+  /** Generates every active client's calendar for a financial year using each client's suggested
+   *  filings — the "set up the whole firm for the new year" action. */
+  async generateForAllClients(organizationId: string, dto: GenerateCalendarForAllDto, actorId: string, meta: RequestMeta) {
+    this.requireFinancialYear(dto.financialYear);
+    const types = await this.calendarTypes(organizationId);
+    const clients = await this.prisma.client.findMany({
+      where: { organizationId, deletedAt: null, status: { in: ["ACTIVE", "ONBOARDING"] } },
+    });
+
+    const totals = { clients: 0, created: 0, alreadyTracked: 0, skippedPastDue: 0 };
+    for (const row of clients) {
+      const pii = await this.clientPii.decryptClient(row);
+      const suggested = suggestedTypeCodes({ entityType: row.entityType, gstin: pii.gstin, tan: pii.tan });
+      const result = await this.createCalendarItems(
+        organizationId,
+        row.id,
+        types.filter((t) => suggested.has(t.code)),
+        dto.financialYear,
+        dto.includePastDue ?? false,
+      );
+      totals.clients++;
+      totals.created += result.created;
+      totals.alreadyTracked += result.alreadyTracked;
+      totals.skippedPastDue += result.skippedPastDue;
+    }
+
+    await this.audit.log({
+      organizationId,
+      actorUserId: actorId,
+      action: "COMPLIANCE_CALENDAR_GENERATED",
+      resourceType: "organization",
+      resourceId: organizationId,
+      result: "success",
+      ipAddress: meta.ip,
+      userAgent: meta.userAgent,
+      metadata: { financialYear: dto.financialYear, allClients: true, ...totals },
+    });
+    return totals;
+  }
+
+  private async createCalendarItems(
+    organizationId: string,
+    clientId: string,
+    types: Array<{ id: string; defaultDueRule: Prisma.JsonValue }>,
+    financialYear: string,
+    includePastDue: boolean,
+  ) {
+    const today = startOfTodayIst();
+    const assessmentYear = assessmentYearFor(financialYear);
+    let skippedPastDue = 0;
+    const rows: Prisma.ComplianceItemCreateManyInput[] = [];
+    for (const type of types) {
+      for (const { period, dueDate } of expandRule(type.defaultDueRule as DueRule, financialYear)) {
+        const pastDue = dueDate < today;
+        if (pastDue && !includePastDue) {
+          skippedPastDue++;
+          continue;
+        }
+        rows.push({
+          organizationId,
+          clientId,
+          complianceTypeId: type.id,
+          financialYear,
+          assessmentYear,
+          period,
+          dueDate,
+          status: pastDue ? "OVERDUE" : "UPCOMING",
+        });
+      }
+    }
+    // skipDuplicates relies on the (org, client, type, financialYear, period) unique index.
+    const { count } = rows.length > 0 ? await this.prisma.complianceItem.createMany({ data: rows, skipDuplicates: true }) : { count: 0 };
+    return { created: count, alreadyTracked: rows.length - count, skippedPastDue };
+  }
+
+  /** Catalog types usable for calendar generation: global or this organization's own, with a
+   *  due-date rule. */
+  private calendarTypes(organizationId: string) {
+    return this.prisma.complianceType.findMany({
+      where: {
+        OR: [{ organizationId: null }, { organizationId }],
+        defaultDueRule: { not: Prisma.DbNull },
+      },
+      orderBy: [{ category: "asc" }, { name: "asc" }],
+    });
+  }
+
+  private async loadClientForSuggestions(organizationId: string, clientId: string) {
+    const row = await this.prisma.client.findFirst({ where: { id: clientId, organizationId, deletedAt: null } });
+    if (!row) {
+      throw AppError.notFound("CLIENT_NOT_FOUND", "Client was not found");
+    }
+    const pii = await this.clientPii.decryptClient(row);
+    return { entityType: row.entityType, gstin: pii.gstin, tan: pii.tan };
+  }
+
+  private requireFinancialYear(financialYear: string) {
+    if (parseFinancialYear(financialYear) === null) {
+      throw new AppError("INVALID_FINANCIAL_YEAR", "financialYear must be consecutive years like 2025-26");
+    }
   }
 
   private async requireItem(organizationId: string, itemId: string) {

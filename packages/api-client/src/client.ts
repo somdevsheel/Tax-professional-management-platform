@@ -368,6 +368,29 @@ export class ApiClient {
     update: (id: string, body: T.UpdateComplianceItemInput) =>
       this.request<T.ComplianceItem>("PATCH", `/compliance-items/${id}`, body),
     remove: (id: string) => this.request<null>("DELETE", `/compliance-items/${id}`),
+    plan: (clientId: string, financialYear: string) =>
+      this.request<T.CompliancePlanEntry[]>(
+        "GET",
+        `/clients/${clientId}/compliance-plan?financialYear=${encodeURIComponent(financialYear)}`,
+      ),
+    generate: (clientId: string, body: T.GenerateCalendarInput) =>
+      this.request<T.GenerateCalendarResult>("POST", `/clients/${clientId}/compliance-items/generate`, body),
+    generateForAllClients: (body: { financialYear: string; includePastDue?: boolean }) =>
+      this.request<T.GenerateCalendarResult & { clients: number }>("POST", "/compliance-items/generate-all", body),
+  };
+
+  // ---- Notifications ----
+  notifications = {
+    list: (params?: { unreadOnly?: boolean; limit?: number }) => {
+      const qs = new URLSearchParams();
+      if (params?.unreadOnly) qs.set("unreadOnly", "true");
+      if (params?.limit) qs.set("limit", String(params.limit));
+      const suffix = qs.toString() ? `?${qs.toString()}` : "";
+      return this.request<T.Notification[]>("GET", `/notifications${suffix}`);
+    },
+    unreadCount: () => this.request<{ count: number }>("GET", "/notifications/unread-count"),
+    markRead: (id: string) => this.request<null>("POST", `/notifications/${id}/read`),
+    markAllRead: () => this.request<{ updated: number }>("POST", "/notifications/read-all"),
   };
 
   // ---- Documents ----

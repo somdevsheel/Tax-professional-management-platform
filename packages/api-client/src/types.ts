@@ -273,6 +273,8 @@ export interface ComplianceItem {
   complianceTypeId: string;
   financialYear: string;
   assessmentYear: string | null;
+  /** "2025-04" (monthly), "Q1" (quarterly), "ANNUAL", or null for hand-added items. */
+  period: string | null;
   dueDate: string;
   filingDate: string | null;
   status: ComplianceStatus;
@@ -282,6 +284,40 @@ export interface ComplianceItem {
   updatedAt: string;
   client?: { id: string; name: string };
   complianceType?: ComplianceType;
+}
+
+/** One row of a client's "generate compliance calendar" picker. */
+export interface CompliancePlanEntry {
+  complianceType: ComplianceType;
+  suggested: boolean;
+  reason: string | null;
+  /** How many filings this type produces in the financial year (12 monthly, 4 quarterly, 1). */
+  periods: number;
+  /** How many of those are already tracked for this client. */
+  tracked: number;
+}
+
+export interface GenerateCalendarInput {
+  financialYear: string;
+  complianceTypeIds: string[];
+  includePastDue?: boolean;
+}
+
+export interface GenerateCalendarResult {
+  created: number;
+  alreadyTracked: number;
+  skippedPastDue: number;
+}
+
+export interface Notification {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  relatedEntityType: "compliance_item" | "task" | string | null;
+  relatedEntityId: string | null;
+  readAt: string | null;
+  createdAt: string;
 }
 
 export interface CreateComplianceItemInput {

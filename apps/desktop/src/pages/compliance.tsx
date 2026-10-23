@@ -7,13 +7,10 @@ import {
   useComplianceItems,
   useCreateComplianceItem,
   useDeleteComplianceItem,
+  useGenerateCalendarForAll,
   useUpdateComplianceItem,
 } from "../lib/hooks";
-import { formatDateTime } from "../lib/format";
-
-function isOverdue(dueDate: string, status: string) {
-  return status !== "FILED" && status !== "VERIFIED" && status !== "NOT_APPLICABLE" && new Date(dueDate) < new Date();
-}
+import { currentFinancialYear, financialYearOptions, formatDate, isOverdue, periodLabel } from "../lib/format";
 
 export function CompliancePage() {
   const [status, setStatus] = useState("");
@@ -27,6 +24,23 @@ export function CompliancePage() {
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ clientId: "", complianceTypeId: "", financialYear: "", dueDate: "" });
   const [error, setError] = useState<string | null>(null);
+  const generateAll = useGenerateCalendarForAll();
+  const [bulkYear, setBulkYear] = useState(currentFinancialYear());
+  const [bulkMessage, setBulkMessage] = useState<string | null>(null);
+
+  async function onGenerateAll() {
+    setBulkMessage(null);
+    try {
+      const r = await generateAll.mutateAsync({ financialYear: bulkYear });
+      setBulkMessage(
+        `${r.created} filing${r.created === 1 ? "" : "s"} added across ${r.clients} client${r.clients === 1 ? "" : "s"}` +
+          (r.alreadyTracked ? ` · ${r.alreadyTracked} already tracked` : "") +
+          (r.skippedPastDue ? ` · ${r.skippedPastDue} past due date skipped` : ""),
+      );
+    } catch (err) {
+      setBulkMessage(err instanceof ApiError ? err.message : "Could not generate calendars.");
+    }
+  }
 
   async function onCreate() {
     setError(null);
@@ -110,6 +124,31 @@ export function CompliancePage() {
         </div>
       )}
 
+      <div className="card" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 240 }}>
+          <strong style={{ fontSize: 13 }}>Set up a year for every client</strong>
+          <p className="muted" style={{ margin: "2px 0 0" }}>
+            Adds each active client's suggested filings (GST, TDS, ITR, ROC…) with statutory due dates. Safe to re-run.
+          </p>
+        </div>
+        <select
+          className="input"
+          style={{ width: "auto", marginBottom: 0 }}
+          value={bulkYear}
+          onChange={(e) => setBulkYear(e.target.value)}
+        >
+          {financialYearOptions().map((fy) => (
+            <option key={fy} value={fy}>
+              FY {fy}
+            </option>
+          ))}
+        </select>
+        <button className="btn btn-primary" onClick={onGenerateAll} disabled={generateAll.isPending}>
+          {generateAll.isPending ? "Generating…" : "Generate for all clients"}
+        </button>
+        {bulkMessage && <p className="muted" style={{ width: "100%", margin: 0 }}>{bulkMessage}</p>}
+      </div>
+
       <select className="input" style={{ maxWidth: 200, marginBottom: 12 }} value={status} onChange={(e) => setStatus(e.target.value)}>
         <option value="">All statuses</option>
         {COMPLIANCE_STATUSES.map((s) => (
@@ -125,6 +164,7 @@ export function CompliancePage() {
             <tr>
               <th>Client</th>
               <th>Filing</th>
+              <th>Period</th>
               <th>FY</th>
               <th>Due</th>
               <th>Status</th>
@@ -134,14 +174,14 @@ export function CompliancePage() {
           <tbody>
             {items.isLoading && (
               <tr>
-                <td colSpan={6} className="muted" style={{ textAlign: "center", padding: 24 }}>
+                <td colSpan={7} className="muted" style={{ textAlign: "center", padding: 24 }}>
                   Loading…
                 </td>
               </tr>
             )}
             {items.data?.data.length === 0 && (
               <tr>
-                <td colSpan={6} className="muted" style={{ textAlign: "center", padding: 24 }}>
+                <td colSpan={7} className="muted" style={{ textAlign: "center", padding: 24 }}>
                   Nothing tracked yet.
                 </td>
               </tr>
@@ -150,9 +190,10 @@ export function CompliancePage() {
               <tr key={i.id}>
                 <td>{i.client?.name}</td>
                 <td className="muted">{i.complianceType?.name}</td>
+                <td className="muted">{periodLabel(i.period)}</td>
                 <td className="muted">{i.financialYear}</td>
                 <td className="muted" style={isOverdue(i.dueDate, i.status) ? { color: "#dc2626", fontWeight: 500 } : undefined}>
-                  {formatDateTime(i.dueDate)}
+                  {formatDate(i.dueDate)}
                 </td>
                 <td>
                   <select

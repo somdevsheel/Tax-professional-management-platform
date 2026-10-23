@@ -202,9 +202,17 @@ due_date, filing_date null, status (UPCOMING, IN_PROGRESS, FILED, VERIFIED, OVER
 NOT_APPLICABLE), assigned_to null, notes null, created_at, updated_at`. Linked documents via
 `document.category` or a `compliance_item_documents` join table.
 
+`period` (`"2025-04"` monthly, `"Q1"`…`"Q4"` quarterly, `"ANNUAL"`; null for hand-added items)
+plus the unique index `(organization_id, client_id, compliance_type_id, financial_year, period)`
+make calendar generation idempotent. `compliance_types.default_due_rule` holds the statutory
+rule the calendar is generated from (`src/compliance/due-rules.ts`).
+
 ### notifications
 `id, organization_id, user_id, type, title, body, related_entity_type null, related_entity_id
 null, channel (in_app, email, desktop), read_at null, sent_at null, created_at`.
+
+`dedupe_key` (unique, nullable) — `compliance:<item>:<due7|due3|due1|due0|overdue>:<user>` or the
+task equivalent — makes the deadline sweep idempotent: re-running it never re-sends a reminder.
 
 ### audit_logs
 Append-only.
