@@ -96,3 +96,13 @@ export const ExternalLinkIcon = (p: SVGProps<SVGSVGElement>) => (
     <path d="M10 14L21 3" />
   </Icon>
 );
+export const MenuIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M4 6h16M4 12h16M4 18h16" />
+  </Icon>
+);
+export const CloseIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M18 6L6 18M6 6l12 12" />
+  </Icon>
+);

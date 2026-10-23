@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { Sidebar } from "@/components/sidebar";
@@ -9,6 +9,8 @@ import { Topbar } from "@/components/topbar";
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { status, organizationId } = useAuth();
   const router = useRouter();
+  const [navOpen, setNavOpen] = useState(false);
+  const closeNav = useCallback(() => setNavOpen(false), []);
 
   // Client-side redirect only — a UX convenience, not the authorization boundary. Every
   // request the pages below make is still independently authorized by the backend
@@ -26,10 +28,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex min-h-screen">
-      <Sidebar />
+      <Sidebar mobileOpen={navOpen} onClose={closeNav} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar />
-        <main className="flex-1 overflow-y-auto p-6">
+        <Topbar onOpenNav={() => setNavOpen(true)} />
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6">
           {!organizationId ? <SelectOrganizationPrompt /> : children}
         </main>
       </div>

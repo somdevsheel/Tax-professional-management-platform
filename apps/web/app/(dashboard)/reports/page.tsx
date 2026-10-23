@@ -1,5 +1,6 @@
 "use client";
 
+import { ApiError } from "@tax-platform/api-client";
 import { StatCard } from "@/components/stat-card";
 import { useReportsSummary } from "@/lib/hooks";
 
@@ -39,7 +40,17 @@ export default function ReportsPage() {
   const summary = useReportsSummary();
 
   if (summary.isLoading) return <p className="text-sm text-slate-400">Loading…</p>;
-  if (!summary.data) return null;
+  if (summary.isError || !summary.data) {
+    return (
+      <div className="card mx-auto mt-16 max-w-md p-8 text-center">
+        <p className="text-sm text-slate-600">
+          {summary.error instanceof ApiError && summary.error.status === 403
+            ? "Your role doesn't have access to reports. Ask a firm admin if you need it."
+            : "Reports couldn't be loaded. Please try again."}
+        </p>
+      </div>
+    );
+  }
 
   const { clients, tasks, compliance, documents } = summary.data;
 

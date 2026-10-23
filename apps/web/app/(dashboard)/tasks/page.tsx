@@ -120,7 +120,7 @@ export default function TasksPage() {
         </div>
       )}
 
-      <div className="flex gap-3">
+      <div className="flex flex-wrap gap-3">
         <select className="input max-w-[180px]" value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">All statuses</option>
           {TASK_STATUSES.map((s) => (
@@ -139,8 +139,8 @@ export default function TasksPage() {
         </select>
       </div>
 
-      <div className="card overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="card overflow-x-auto">
+        <table className="w-full min-w-[40rem] text-sm">
           <thead className="border-b border-slate-100 bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-5 py-3">Title</th>

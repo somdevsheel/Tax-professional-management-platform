@@ -214,13 +214,27 @@ fields via the extension exactly as it does via the desktop app, stopping before
   owner can make (hosting, KMS provider, AV engine, email provider) — each of the latter already
   has its refuse-to-boot-unsafely guard in place, same pattern as the KMS provider.
 
+- **Dedicated account-lockout test** (`apps/api/test/account-lockout.spec.ts`): just under the
+  threshold still signs in; at the threshold even the correct password is refused with a
+  response identical to a wrong password (and an `account_locked` audit row is written);
+  failures older than the 15-minute window don't count.
+- **CI `api-tests` job fixed**: it had no object storage, and `ObjectStorageService` connects on
+  boot, so every integration suite (not just documents) would fail at app init in CI. MinIO is
+  now started in the job alongside Postgres/Redis, with the `OBJECT_STORAGE_*` env it needs and
+  the `prisma generate` step the other jobs already had.
+- **Web UI pass**: the sidebar was `hidden` below `md` with no replacement, so the app had no
+  navigation on phones — added an off-canvas drawer. Data tables now scroll inside their card
+  instead of overflowing the page. Shared `.btn`/`.input`/`.card`/`.badge` classes moved into
+  `@layer components` (they were unlayered, so they silently beat any utility override like
+  `btn-secondary text-xs`). Dashboard now shows open/overdue tasks and filings due from
+  `/reports/summary`; the reports page shows an error/permission message instead of rendering
+  blank.
+
 **Not yet done — tracked, not silently skipped:**
 - Performance pass on dashboard/search/audit-log queries at realistic data volume (current
   verification is correctness-focused, not load-tested).
 - A dedicated web/desktop security review pass (the backend review was thorough; web/desktop
   were only covered incidentally while building them — see security-review.md §4).
-- Automated test for the new account-lockout threshold itself (the mechanism is exercised
-  indirectly by existing login tests, not a dedicated "N failed attempts then blocked" test).
 - Postgres Row-Level-Security as defense-in-depth — still needs a dedicated least-privilege
   application DB role to be meaningful, which is a deployment-configuration step.
 - A real staging environment stood up on actual infrastructure (this environment has no cloud

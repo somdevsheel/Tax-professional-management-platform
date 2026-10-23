@@ -104,8 +104,11 @@ done: a dedicated web/desktop security pass, load testing, and Postgres RLS as
 defense-in-depth — see [docs/development-roadmap.md](docs/development-roadmap.md) for the
 complete, honest breakdown.
 
-Not yet built: documents/tasks/compliance application code. See
-[docs/development-roadmap.md](docs/development-roadmap.md).
+**Tasks, compliance tracking, documents, and reports** are now built end to end (API modules
+with integration tests, plus web and desktop pages), replacing the Phase 3 "coming soon"
+placeholders. The full backend suite is 66 tests (unit + integration), including a dedicated
+account-lockout test. See [docs/development-roadmap.md](docs/development-roadmap.md) for what's
+still open.
 
 ## Local Development
 
@@ -154,7 +157,7 @@ and the Linux-specific WebKitGTK version note if you're developing on Linux).
 cd apps/api
 pnpm typecheck
 pnpm lint
-pnpm test        # unit + integration tests against the Postgres/Redis started above
+pnpm test        # unit + integration tests — needs the Postgres, Redis, AND MinIO started above (the API connects to object storage on boot)
 pnpm build
 
 cd ../web
@@ -174,10 +177,3 @@ This platform handles CA-firm and government-portal credentials. Read
 before touching auth, the credential vault, tenant scoping, or the portal automation engine.
 The product **never** bypasses CAPTCHA/OTP/MFA/rate limits on any portal — see
 [docs/browser-automation-design.md](docs/browser-automation-design.md).
-
-
-
-
-git add .
-git commit -m "add new features"
-git push origin main

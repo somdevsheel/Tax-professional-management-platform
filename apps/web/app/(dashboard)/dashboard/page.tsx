@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useAuditLog, useClients, useOrganizationMembers } from "@/lib/hooks";
+import { useAuditLog, useClients, useOrganizationMembers, useReportsSummary } from "@/lib/hooks";
 import { StatCard } from "@/components/stat-card";
 import { formatRelative, humanizeAction } from "@/lib/format";
 import { useAuth } from "@/lib/auth-context";
@@ -11,6 +11,13 @@ export default function DashboardPage() {
   const clients = useClients({});
   const members = useOrganizationMembers();
   const activity = useAuditLog();
+  // Requires reports.view — roles without it just don't get the task/filing tiles.
+  const summary = useReportsSummary();
+  const tasks = summary.data?.tasks;
+  const compliance = summary.data?.compliance;
+  const openTasks = tasks
+    ? tasks.total - (tasks.byStatus.COMPLETED ?? 0) - (tasks.byStatus.CANCELLED ?? 0)
+    : undefined;
 
   const recentClients = [...(clients.data?.data ?? [])]
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
@@ -23,10 +30,29 @@ export default function DashboardPage() {
         <p className="text-sm text-slate-500">Here&apos;s what&apos;s happening across your firm.</p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <StatCard label="Total clients" value={clients.data?.meta?.total ?? "—"} />
         <StatCard label="Team members" value={members.data?.length ?? "—"} />
-        <StatCard label="Recent activity" value={activity.data?.data.length ?? "—"} hint="last 50 events" />
+        {tasks && compliance ? (
+          <>
+            <StatCard
+              label="Open tasks"
+              value={openTasks ?? "—"}
+              hint={tasks.overdueCount > 0 ? `${tasks.overdueCount} overdue` : "none overdue"}
+              href="/tasks"
+              tone={tasks.overdueCount > 0 ? "warning" : "default"}
+            />
+            <StatCard
+              label="Filings due in 30 days"
+              value={compliance.dueNext30DaysCount}
+              hint={compliance.overdueCount > 0 ? `${compliance.overdueCount} overdue` : "none overdue"}
+              href="/compliance"
+              tone={compliance.overdueCount > 0 ? "warning" : "default"}
+            />
+          </>
+        ) : (
+          <StatCard label="Recent activity" value={activity.data?.data.length ?? "—"} hint="last 50 events" />
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -43,9 +69,9 @@ export default function DashboardPage() {
             )}
             {recentClients.map((c) => (
               <li key={c.id}>
-                <Link href={`/clients/${c.id}`} className="flex items-center justify-between px-5 py-3 hover:bg-slate-50">
-                  <div>
-                    <p className="text-sm font-medium text-slate-900">{c.name}</p>
+                <Link href={`/clients/${c.id}`} className="flex items-center justify-between gap-3 px-5 py-3 hover:bg-slate-50">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-slate-900">{c.name}</p>
                     <p className="text-xs text-slate-400">{c.entityType.replace(/_/g, " ")}</p>
                   </div>
                   <span className="badge bg-slate-100 text-slate-600">{c.status}</span>
@@ -67,9 +93,9 @@ export default function DashboardPage() {
               <li className="px-5 py-6 text-center text-sm text-slate-400">No activity yet.</li>
             )}
             {(activity.data?.data ?? []).slice(0, 8).map((entry) => (
-              <li key={entry.id} className="flex items-center justify-between px-5 py-3">
-                <span className="text-sm text-slate-700">{humanizeAction(entry.action)}</span>
-                <span className="text-xs text-slate-400">{formatRelative(entry.createdAt)}</span>
+              <li key={entry.id} className="flex items-center justify-between gap-3 px-5 py-3">
+                <span className="truncate text-sm text-slate-700">{humanizeAction(entry.action)}</span>
+                <span className="shrink-0 text-xs text-slate-400">{formatRelative(entry.createdAt)}</span>
               </li>
             ))}
           </ul>

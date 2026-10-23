@@ -23,7 +23,7 @@ export default function ClientsPage() {
         </Link>
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex flex-wrap gap-3">
         <input
           className="input max-w-xs"
           placeholder="Search name, PAN, GSTIN, TAN, CIN…"
@@ -40,8 +40,8 @@ export default function ClientsPage() {
         </select>
       </div>
 
-      <div className="card overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="card overflow-x-auto">
+        <table className="w-full min-w-[40rem] text-sm">
           <thead className="border-b border-slate-100 bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-5 py-3">Name</th>
