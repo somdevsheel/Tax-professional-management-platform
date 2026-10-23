@@ -72,7 +72,7 @@ describe("Compliance calendar & deadline notifications (integration)", () => {
     const res = await api().get(`/api/v1/clients/${clientId}/compliance-plan?financialYear=2030-31`).set("Authorization", `Bearer ${firm.token}`);
     expect(res.status).toBe(200);
     const suggested = res.body.data.filter((p: { suggested: boolean }) => p.suggested).map((p: { complianceType: { code: string } }) => p.complianceType.code);
-    expect(suggested.sort()).toEqual(["ADVANCE_TAX", "AOC4", "GSTR1", "GSTR3B", "GSTR9", "ITR", "MGT7"]);
+    expect(suggested.sort()).toEqual(["ADVANCE_TAX", "AGM", "AOC4", "DIR3_KYC", "DPT3", "GSTR1", "GSTR3B", "GSTR9", "ITR_AUDIT", "MGT7"]);
     const gstr3b = res.body.data.find((p: { complianceType: { code: string } }) => p.complianceType.code === "GSTR3B");
     expect(gstr3b).toMatchObject({ periods: 12, tracked: 0, reason: "Client has a GSTIN on file" });
   });
@@ -140,14 +140,14 @@ describe("Compliance calendar & deadline notifications (integration)", () => {
   it("generates every active client's suggested calendar in one go", async () => {
     const firm = await registerFirm();
     await createClient(firm.token, { name: "Individual", entityType: "INDIVIDUAL" }); // ITR 1 + advance tax 4
-    await createClient(firm.token, { name: "Employer", entityType: "PARTNERSHIP", tan: "MUMA12345B" }); // + TDS 4+4
+    await createClient(firm.token, { name: "Employer", entityType: "PARTNERSHIP", tan: "MUMA12345B" }); // 5 + TDS deposits 12, 24Q 4, 26Q 4, Form 16 1, Form 16A 4
     const offboarded = await createClient(firm.token, { name: "Gone", entityType: "INDIVIDUAL", status: "OFFBOARDED" });
 
     const res = await api()
       .post("/api/v1/compliance-items/generate-all")
       .set("Authorization", `Bearer ${firm.token}`)
       .send({ financialYear: "2030-31" });
-    expect(res.body.data).toEqual({ clients: 2, created: 5 + 13, alreadyTracked: 0, skippedPastDue: 0 });
+    expect(res.body.data).toEqual({ clients: 2, created: 5 + 30, alreadyTracked: 0, skippedPastDue: 0 });
     expect(await prisma.complianceItem.count({ where: { clientId: offboarded } })).toBe(0);
   });
 
@@ -181,14 +181,14 @@ describe("Compliance calendar & deadline notifications (integration)", () => {
 
     const ownerNotes = await prisma.notification.findMany({ where: { userId: firm.userId, organizationId: firm.organizationId } });
     const byItem = Object.fromEntries(ownerNotes.map((n) => [n.relatedEntityId, n.title]));
-    expect(byItem[dueIn3]).toBe("GSTR-3B is due in 3 days");
-    expect(byItem[dueToday]).toBe("GSTR-3B is due today");
-    expect(byItem[justOverdue]).toBe("GSTR-3B is overdue");
+    expect(byItem[dueIn3]).toBe("GSTR-3B (Monthly) is due in 3 days");
+    expect(byItem[dueToday]).toBe("GSTR-3B (Monthly) is due today");
+    expect(byItem[justOverdue]).toBe("GSTR-3B (Monthly) is overdue");
     expect(byItem[longOverdue]).toBeUndefined(); // outside the overdue-alert window
     expect(byItem[assignedToStaff]).toBeUndefined(); // assigned items go to the assignee only
 
     const staffNotes = await prisma.notification.findMany({ where: { userId: staff.userId } });
-    expect(staffNotes.map((n) => [n.relatedEntityId, n.title])).toEqual([[assignedToStaff, "GSTR-3B is due tomorrow"]]);
+    expect(staffNotes.map((n) => [n.relatedEntityId, n.title])).toEqual([[assignedToStaff, "GSTR-3B (Monthly) is due tomorrow"]]);
     expect(staffNotes[0].body).toBe("Reminder Co · FY 2030-31 · due 29 Jul 2030");
 
     const again = await sweep.sweep(now, { organizationId: firm.organizationId });

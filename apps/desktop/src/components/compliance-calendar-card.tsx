@@ -1,7 +1,15 @@
 import { useEffect, useState } from "react";
 import { ApiError } from "@tax-platform/api-client";
 import { useClientComplianceItems, useCompliancePlan, useGenerateCalendar } from "../lib/hooks";
-import { currentFinancialYear, financialYearOptions, formatDate, isOverdue, periodLabel } from "../lib/format";
+import {
+  COMPLIANCE_CATEGORY_LABELS,
+  currentFinancialYear,
+  financialYearOptions,
+  formatDate,
+  groupByCategory,
+  isOverdue,
+  periodLabel,
+} from "../lib/format";
 
 /** A client's compliance calendar: generate a financial year's filings from the statutory due
  *  dates, then see that year's filings in due-date order. */
@@ -83,26 +91,33 @@ export function ComplianceCalendarCard({ clientId }: { clientId: string }) {
             Filings for FY {financialYear}, using the statutory due dates. Suggestions are based on this client's details —
             adjust as needed. Due dates stay editable for government extensions.
           </p>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "6px 16px", marginBottom: 12 }}>
-            {(plan.data ?? []).map((entry) => (
-              <label key={entry.complianceType.id} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13 }}>
-                <input
-                  type="checkbox"
-                  checked={selected.has(entry.complianceType.id)}
-                  onChange={() => toggle(entry.complianceType.id)}
-                  style={{ marginTop: 3 }}
-                />
-                <span>
-                  {entry.complianceType.name}
-                  <span className="muted" style={{ display: "block", fontSize: 11 }}>
-                    {entry.periods === 1 ? "1 filing" : `${entry.periods} filings`}
-                    {entry.tracked > 0 ? ` · ${entry.tracked} already tracked` : ""}
-                    {entry.reason ? ` · ${entry.reason}` : ""}
-                  </span>
-                </span>
-              </label>
-            ))}
-          </div>
+          {groupByCategory(plan.data ?? [], (e) => e.complianceType.category).map(([category, entries]) => (
+            <div key={category} style={{ marginBottom: 14 }}>
+              <p className="field-label muted" style={{ margin: "0 0 6px" }}>
+                {COMPLIANCE_CATEGORY_LABELS[category] ?? category}
+              </p>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "6px 16px" }}>
+                {entries.map((entry) => (
+                  <label key={entry.complianceType.id} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13 }}>
+                    <input
+                      type="checkbox"
+                      checked={selected.has(entry.complianceType.id)}
+                      onChange={() => toggle(entry.complianceType.id)}
+                      style={{ marginTop: 3 }}
+                    />
+                    <span>
+                      {entry.complianceType.name}
+                      <span className="muted" style={{ display: "block", fontSize: 11 }}>
+                        {entry.periods === 1 ? "1 filing" : `${entry.periods} filings`}
+                        {entry.tracked > 0 ? ` · ${entry.tracked} already tracked` : ""}
+                        {entry.reason ? ` · ${entry.reason}` : ""}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          ))}
           <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, marginBottom: 12 }}>
             <input type="checkbox" checked={includePastDue} onChange={(e) => setIncludePastDue(e.target.checked)} />
             Also add filings whose due date has already passed (marked overdue)

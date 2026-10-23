@@ -241,10 +241,14 @@ fields via the extension exactly as it does via the desktop app, stopping before
   integration tests (no plaintext in the stored row or ciphertext bytes, search, cross-firm
   unlinkability, ciphertext-swap rejection, partial updates, contacts, backfill).
 
-- **Compliance calendar + deadline reminders.** Every seeded filing type now carries its
-  statutory due-date rule (GSTR-1 11th / GSTR-3B 20th / PF & ESI 15th of the next month; TDS
-  31 Jul, 31 Oct, 31 Jan, 31 May; advance tax 15 Jun, 15 Sep, 15 Dec, 15 Mar; ITR 31 Jul;
-  GSTR-9 31 Dec; AOC-4 30 Oct; MGT-7 29 Nov). A client's year is generated in one action —
+- **Compliance calendar + deadline reminders.** A 37-type catalog of recurring statutory
+  filings, each with its default due-date rule, defined once in `src/compliance/due-rules.ts`
+  (seeded from there): GST (GSTR-1/3B monthly and QRMP, PMT-06, CMP-08, GSTR-4/7/8/9/9C),
+  income tax (ITR non-audit/audit/TP, tax audit report, Form 3CEB, advance tax, SFT), TDS/TCS
+  (monthly deposits incl. March → 30 Apr, 24Q/26Q/27Q/27EQ, Forms 16/16A), MCA companies (AGM,
+  ADT-1, AOC-4 and CFS, MGT-7, DPT-3, DIR-3 KYC, MSME-1) and LLPs (Form 11, Form 8), PF/ESI.
+  Every entry's FY 2025-26 dates are pinned in `due-rules.spec.ts`. Event-driven MCA forms
+  (MGT-14, DIR-12, BEN-2, INC-22A…) have no calendar date and stay hand-tracked. A client's year is generated in one action —
   suggested from what's on file (GSTIN → GST, TAN → TDS, company → ROC) — or for every active
   client at once; re-running is a no-op (unique on client/type/FY/period). A deadline sweep
   (`DEADLINE_SWEEP_INTERVAL_MINUTES`, default hourly) marks past-due filings OVERDUE and sends

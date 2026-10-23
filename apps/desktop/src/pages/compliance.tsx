@@ -10,7 +10,15 @@ import {
   useGenerateCalendarForAll,
   useUpdateComplianceItem,
 } from "../lib/hooks";
-import { currentFinancialYear, financialYearOptions, formatDate, isOverdue, periodLabel } from "../lib/format";
+import {
+  COMPLIANCE_CATEGORY_LABELS,
+  currentFinancialYear,
+  financialYearOptions,
+  formatDate,
+  groupByCategory,
+  isOverdue,
+  periodLabel,
+} from "../lib/format";
 
 export function CompliancePage() {
   const [status, setStatus] = useState("");
@@ -87,10 +95,14 @@ export function CompliancePage() {
               onChange={(e) => setForm((f) => ({ ...f, complianceTypeId: e.target.value }))}
             >
               <option value="">Select filing type…</option>
-              {(catalog.data ?? []).map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name} ({t.periodicity})
-                </option>
+              {groupByCategory(catalog.data ?? [], (t) => t.category).map(([category, types]) => (
+                <optgroup key={category} label={COMPLIANCE_CATEGORY_LABELS[category] ?? category}>
+                  {types.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           </div>

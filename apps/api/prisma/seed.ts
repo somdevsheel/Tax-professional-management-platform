@@ -9,7 +9,7 @@
  */
 import { Prisma, PrismaClient } from "@prisma/client";
 // A pure module (no Nest/DB imports), so importing it keeps this script dependency-free.
-import { DEFAULT_DUE_RULES } from "../src/compliance/due-rules";
+import { COMPLIANCE_CATALOG, DEFAULT_DUE_RULES } from "../src/compliance/due-rules";
 
 const prisma = new PrismaClient();
 
@@ -76,22 +76,9 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
   READ_ONLY: ["clients.view", "documents.view", "tasks.view", "compliance.view", "reports.view"],
 };
 
-// Global catalog (organizationId: null), same "seeded once, browsable by any org" shape as
-// PORTALS below — a firm picks from these when tracking a filing for a client rather than
-// typing periodicity/category by hand each time.
-const COMPLIANCE_TYPES: Array<{ code: string; name: string; category: string; periodicity: string }> = [
-  { code: "GSTR1", name: "GSTR-1", category: "GST", periodicity: "MONTHLY" },
-  { code: "GSTR3B", name: "GSTR-3B", category: "GST", periodicity: "MONTHLY" },
-  { code: "GSTR9", name: "GSTR-9 (Annual Return)", category: "GST", periodicity: "ANNUAL" },
-  { code: "ITR", name: "Income Tax Return Filing", category: "INCOME_TAX", periodicity: "ANNUAL" },
-  { code: "ADVANCE_TAX", name: "Advance Tax Payment", category: "INCOME_TAX", periodicity: "QUARTERLY" },
-  { code: "TDS_24Q", name: "TDS Return — Form 24Q (Salary)", category: "TDS", periodicity: "QUARTERLY" },
-  { code: "TDS_26Q", name: "TDS Return — Form 26Q (Non-Salary)", category: "TDS", periodicity: "QUARTERLY" },
-  { code: "AOC4", name: "AOC-4 (Financial Statements)", category: "MCA", periodicity: "ANNUAL" },
-  { code: "MGT7", name: "MGT-7 (Annual Return)", category: "MCA", periodicity: "ANNUAL" },
-  { code: "PF_RETURN", name: "PF Return (ECR)", category: "PF_ESI", periodicity: "MONTHLY" },
-  { code: "ESI_RETURN", name: "ESI Return", category: "PF_ESI", periodicity: "MONTHLY" },
-];
+// Global compliance catalog (organizationId: null) — defined once in src/compliance/due-rules.ts
+// alongside the due-date rules it's generated from, so the two can't drift apart.
+const COMPLIANCE_TYPES = COMPLIANCE_CATALOG.map(({ code, name, category, periodicity }) => ({ code, name, category, periodicity }));
 
 const PORTALS: Array<{ code: string; name: string; category: string; baseUrl: string; loginUrl: string }> = [
   { code: "GST", name: "GST Portal", category: "GST", baseUrl: "https://www.gst.gov.in", loginUrl: "https://services.gst.gov.in/services/login" },

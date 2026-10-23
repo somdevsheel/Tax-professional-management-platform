@@ -74,3 +74,24 @@ export function formatDate(iso: string): string {
   const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
   return `${d} ${MONTHS[m - 1]} ${y}`;
 }
+
+export const COMPLIANCE_CATEGORY_LABELS: Record<string, string> = {
+  GST: "GST",
+  INCOME_TAX: "Income tax",
+  TDS: "TDS / TCS",
+  MCA: "MCA (ROC)",
+  PF_ESI: "PF / ESI",
+};
+
+/** Groups items by compliance category, in the catalog's category order. */
+export function groupByCategory<T>(items: T[], categoryOf: (item: T) => string): Array<[string, T[]]> {
+  const order = Object.keys(COMPLIANCE_CATEGORY_LABELS);
+  const groups = new Map<string, T[]>();
+  for (const item of items) {
+    const key = categoryOf(item);
+    groups.set(key, [...(groups.get(key) ?? []), item]);
+  }
+  // Unknown categories (e.g. a firm's own) sort after the known ones.
+  const rank = (category: string) => (order.includes(category) ? order.indexOf(category) : order.length);
+  return [...groups].sort(([a], [b]) => rank(a) - rank(b));
+}
